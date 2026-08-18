@@ -1,0 +1,25 @@
+{
+  "name": "dragon-console-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "dragon-console": "./dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsx src/index.tsx",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "ink": "^5.1.0",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/react": "^18.3.3",
+    "tsx": "^4.19.2",
+    "typescript": "^5.9.2"
+  }
+}
