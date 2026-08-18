@@ -110,7 +110,7 @@ export function BootSequence({size, onComplete}: BootSequenceProps) {
     });
   }
 
-  if (tick > 22 && tick < 54) {
+  if (tick > 22 && tick < 30) {
     rows.push({text: fit('  ' + '-'.repeat(Math.max(0, width - 4)), width), color: palette.dim});
     for (const item of diagnosticCopy.slice(0, diagnosticCount)) {
       rows.push({
@@ -121,7 +121,11 @@ export function BootSequence({size, onComplete}: BootSequenceProps) {
   }
 
   if (tick >= 30 && !collapse) {
-    rows.length = 0;
+    rows.push({
+      text: center(fading ? 'DRAGON CORE // releasing' : 'DRAGON CORE // forming', width),
+      color: fading ? palette.amberDim : palette.amber,
+      dim: fading
+    });
     for (const [index, line] of dragonCrossArt.entries()) {
       if (!artVisibility(index, tick)) continue;
       rows.push({
