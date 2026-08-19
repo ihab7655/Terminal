@@ -4,6 +4,10 @@ import {launcherItems} from '../data/fakeConversation.js';
 import {palette} from '../theme/palette.js';
 import {ContextualView} from '../views/ContextualView.js';
 
+// Border, vertical padding and the tallest of the two columns. ConsoleShell
+// needs this to know how many rows are left for the story behind the panel.
+export const LAUNCHER_HEIGHT = 2 + 2 + 3 + launcherItems.length;
+
 type LauncherOverlayProps = {
   selectedIndex: number;
   width: number;
@@ -11,7 +15,7 @@ type LauncherOverlayProps = {
 
 export function LauncherOverlay({selectedIndex, width}: LauncherOverlayProps) {
   const selected = launcherItems[selectedIndex] ?? launcherItems[0];
-  const overlayWidth = Math.min(width - 2, 86);
+  const overlayWidth = width - 2;
   const leftWidth = 24;
   const viewWidth = overlayWidth - leftWidth - 5;
 

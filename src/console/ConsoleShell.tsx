@@ -2,7 +2,7 @@ import React from 'react';
 import {Box, Text} from 'ink';
 import {Composer} from '../composer/Composer.js';
 import {ConversationStory} from '../conversation/ConversationStory.js';
-import {LauncherOverlay} from '../launcher/LauncherOverlay.js';
+import {LAUNCHER_HEIGHT, LauncherOverlay} from '../launcher/LauncherOverlay.js';
 import {palette} from '../theme/palette.js';
 import type {TerminalSize} from '../utils/useTerminalSize.js';
 
@@ -14,6 +14,10 @@ type ConsoleShellProps = {
   selectedIndex: number;
 };
 
+const HEADER_ROWS = 3;
+const STORY_MARGIN = 2;
+const COMPOSER_ROWS = 4;
+
 export function ConsoleShell({
   size,
   composerValue,
@@ -23,6 +27,11 @@ export function ConsoleShell({
 }: ConsoleShellProps) {
   const width = Math.min(size.width - 2, 110);
   const shellHeight = Math.max(22, size.height - 2);
+
+  // The launcher rises from the composer instead of replacing the story, so
+  // the story keeps whatever rows the panel leaves rather than vanishing.
+  const storyRows =
+    shellHeight - HEADER_ROWS - STORY_MARGIN - COMPOSER_ROWS - (launcherOpen ? LAUNCHER_HEIGHT + 1 : 1);
 
   return (
     <Box flexDirection="column" width={width} minHeight={shellHeight} paddingX={1}>
@@ -42,20 +51,19 @@ export function ConsoleShell({
         </Text>
       </Box>
 
-      {launcherOpen ? (
-        <LauncherOverlay selectedIndex={selectedIndex} width={width} />
-      ) : (
-        <Box flexDirection="column" marginTop={2} flexGrow={1}>
-          <ConversationStory size={size} />
+      <Box flexDirection="column" marginTop={STORY_MARGIN} flexGrow={1}>
+        <ConversationStory size={size} maxRows={storyRows} dimmed={launcherOpen} />
+        {!launcherOpen && (
           <Box marginTop={1}>
             <Text color={palette.dim}>
               - hidden details available through contextual launcher -
             </Text>
           </Box>
-        </Box>
-      )}
+        )}
+      </Box>
 
-      <Box flexGrow={1} />
+      {launcherOpen && <LauncherOverlay selectedIndex={selectedIndex} width={width} />}
+
       <Composer value={composerValue} cursor={composerCursor} width={width} focused={!launcherOpen} />
     </Box>
   );
