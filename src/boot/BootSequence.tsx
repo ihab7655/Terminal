@@ -23,59 +23,16 @@ function fixedArtLine(line: string, width: number) {
 }
 
 const ART_COLUMNS = Math.max(...dragonCrossArt.map(item => Array.from(item).length));
-const artPriority = buildArtPriority();
 
-function buildArtPriority() {
-  const grid = dragonCrossArt.map(line => Array.from(line.padEnd(ART_COLUMNS, ' ')));
-  const priority = grid.map(row => row.map(() => Number.POSITIVE_INFINITY));
-  const queue: Array<[number, number]> = [];
-  const directions = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
-
-  const active = (row: number, column: number) => {
-    const cell = grid[row]?.[column] ?? ' ';
-    return (cell.codePointAt(0) ?? 0) > 0x2800;
-  };
-
-  for (let row = 0; row < grid.length; row += 1) {
-    for (let column = 0; column < ART_COLUMNS; column += 1) {
-      if (!active(row, column)) continue;
-      const border = directions.some(([dy, dx]) => !active(row + dy, column + dx));
-      if (border) {
-        priority[row][column] = 0;
-        queue.push([row, column]);
-      }
-    }
-  }
-
-  let cursor = 0;
-  while (cursor < queue.length) {
-    const [row, column] = queue[cursor++];
-    for (const [dy, dx] of directions) {
-      const nextRow = row + dy;
-      const nextColumn = column + dx;
-      if (!active(nextRow, nextColumn) || priority[nextRow][nextColumn] !== Number.POSITIVE_INFINITY) continue;
-      priority[nextRow][nextColumn] = priority[row][column] + 1;
-      queue.push([nextRow, nextColumn]);
-    }
-  }
-
-  return priority;
-}
-
-function outlineArtLine(line: string, row: number, progress: number) {
+function scanArtLine(line: string, progress: number) {
   const cells = Array.from(line.padEnd(ART_COLUMNS, ' '));
-  const maxPriority = Math.max(...artPriority.flat().filter(value => Number.isFinite(value)), 0);
-  const cutoff = Math.floor(progress * maxPriority);
-  return cells.map((cell, column) => {
-    const priority = artPriority[row]?.[column] ?? Number.POSITIVE_INFINITY;
-    return priority <= cutoff ? cell : ' ';
-  }).join('');
+  const cutoff = Math.floor(progress * ART_COLUMNS);
+  return cells.map((cell, column) => column <= cutoff ? cell : ' ').join('');
 }
 
 function artColor(index: number, tick: number, progress: number, fading: boolean) {
   if (fading) return index % 2 === 0 ? palette.dim : palette.amberDim;
-  if (progress < 0.22) return palette.amberDim;
-  if (progress < 0.48) return palette.amber;
+  if (progress < 0.24) return palette.cyanSoft;
   const pulse = (tick * 2 + index * 3) % 20;
   if (pulse < 2 && progress > 0.72) return palette.ink;
   if (pulse === 10 || pulse === 11) return palette.amber;
@@ -98,8 +55,8 @@ export function BootSequence({size, onComplete}: BootSequenceProps) {
   const contentHeight = Math.max(18, Math.min(size.height - 3, 34));
   const dragonPage = tick < 80;
   const fading = tick >= 66 && dragonPage;
-  // Test 3: reveal the outer contour first, then the inner details.
-  const outlineProgress = clamp((tick - 8) / 42, 0, 1);
+  // Test 4: a horizontal scan reveals the dragon from left to right.
+  const scanProgress = clamp((tick - 8) / 42, 0, 1);
   const fadeProgress = clamp((tick - 66) / 14, 0, 1);
 
   useEffect(() => {
@@ -118,9 +75,9 @@ export function BootSequence({size, onComplete}: BootSequenceProps) {
       const rowIndex = topOffset + index;
       if (rowIndex >= 0 && rowIndex < rows.length) {
         rows[rowIndex] = {
-          text: fixedArtLine(outlineArtLine(line, index, outlineProgress), width),
-          color: artColor(index, tick, outlineProgress, fading),
-          dim: fading || outlineProgress < 0.28
+          text: fixedArtLine(scanArtLine(line, scanProgress), width),
+          color: artColor(index, tick, scanProgress, fading),
+          dim: fading || scanProgress < 0.24
         };
       }
     }
