@@ -26,7 +26,11 @@ const NAME_WIPE_TICKS = 14;
 const TAGLINE_FROM = 90;
 const EXIT_FROM = 114;
 const EXIT_TICKS = 8;
-export const BOOT_TICKS = EXIT_FROM + EXIT_TICKS;
+// Hand over BEFORE the fade reaches nothing. onComplete runs in an effect, so
+// the frame at BOOT_TICKS is always drawn — ending exactly on zero meant one
+// completely empty frame was published between the two screens, which reads as
+// the whole screen dropping out and coming back rather than as a cut.
+export const BOOT_TICKS = EXIT_FROM + EXIT_TICKS - 2;
 
 // The art is centred as one block: every line shares the same left offset. An
 // earlier revision centred lines by their own length, which sheared the drawing.
@@ -250,7 +254,7 @@ export function BootSequence({size, onComplete}: BootSequenceProps) {
   }
 
   // The welcome text dims away with the dragon instead of blinking out. Past
-  // the fade nothing is drawn at all: painting it in a darker colour only
+  // the midpoint it is not drawn at all — painting it in a darker colour only
   // hides it on a black background, and shows as a speck on any other.
   const gone = exitProgress >= 1;
   const exitColor = (color: string) => (exitProgress > 0.25 ? palette.dim : color);
