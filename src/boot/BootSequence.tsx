@@ -17,14 +17,14 @@ type BootSequenceProps = {
 // Welcome timeline, in ticks of TICK_MS. The sky arrives first, the dragon
 // assembles into it, flashes, settles, and the greeting and name follow.
 const TICK_MS = 70;
-const ASSEMBLE_FROM = 8;
-const ASSEMBLE_TO = 40;
-const FLASH_TO = 50;
-const GREETING_FROM = 56;
-const NAME_FROM = 62;
+const ASSEMBLE_FROM = 18;
+const ASSEMBLE_TO = 50;
+const FLASH_TO = 60;
+const GREETING_FROM = 66;
+const NAME_FROM = 72;
 const NAME_WIPE_TICKS = 14;
-const TAGLINE_FROM = 80;
-const EXIT_FROM = 104;
+const TAGLINE_FROM = 90;
+const EXIT_FROM = 114;
 const EXIT_TICKS = 8;
 export const BOOT_TICKS = EXIT_FROM + EXIT_TICKS;
 
@@ -117,7 +117,7 @@ function ramp(tick: number, stops: ReadonlyArray<readonly [number, number]>) {
 
 const STAR_STOPS = [
   [0, 0],
-  [5, 1],
+  [8, 1],
   [ASSEMBLE_TO, 1],
   [GREETING_FROM, 0.6],
   [TAGLINE_FROM, 0.4],
@@ -126,7 +126,7 @@ const STAR_STOPS = [
 ] as const;
 
 const FLOW_STOPS = [
-  [0, 1],
+  [0, 1.7],
   [ASSEMBLE_FROM, 1],
   [ASSEMBLE_TO, 0.35],
   [NAME_FROM, 0],
@@ -143,6 +143,7 @@ function distanceToRect(rect: Rect, row: number, column: number) {
 
 const QUIET_RADIUS = 2;
 const HALO_RADIUS = 11;
+const HALO_TICKS = 12;
 
 function quietFalloff(rects: Rect[], row: number, column: number) {
   let nearest = Infinity;
@@ -229,9 +230,12 @@ export function BootSequence({size, onComplete}: BootSequenceProps) {
   const flowLevel = ramp(tick, FLOW_STOPS) * flashDip;
 
   const blank: Cell = {ch: ' ', color: palette.shadow};
+  // Until the dragon starts forming there is nothing to clear a space for, so
+  // the sky covers the whole page and the halo opens as the art arrives.
+  const halo = clamp((tick - ASSEMBLE_FROM) / HALO_TICKS, 0, 1);
   const grid: Cell[][] = Array.from({length: contentHeight}, (_, row) =>
     Array.from({length: width}, (_, column) => {
-      const falloff = quietFalloff(quiet, row, column);
+      const falloff = 1 - halo * (1 - quietFalloff(quiet, row, column));
       if (falloff <= 0) return blank;
       const mark = skyAt(row, column, tick, starLevel * falloff, flowLevel * falloff);
       return mark ? {ch: mark.ch, color: mark.color} : blank;
