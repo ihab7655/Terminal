@@ -52,7 +52,8 @@ export function BootSequence({size, onComplete}: BootSequenceProps) {
   const contentHeight = Math.max(18, Math.min(size.height - 3, 34));
   const dragonPage = tick < 80;
   const fading = tick >= 66 && dragonPage;
-  const revealProgress = clamp((tick - 18) / 40, 0, 1);
+  // Test 1: assemble the dragon from its central body outward.
+  const revealProgress = clamp((tick - 8) / 42, 0, 1);
   const fadeProgress = clamp((tick - 66) / 14, 0, 1);
   const radius = fading ? artRadius(1 - fadeProgress) : artRadius(revealProgress);
   const middle = (dragonCrossArt.length - 1) / 2;
