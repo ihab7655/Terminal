@@ -22,20 +22,12 @@ function fixedArtLine(line: string, width: number) {
   return `${' '.repeat(left)}${line.padEnd(artWidth, ' ')}`.slice(0, width);
 }
 
-const ART_COLUMNS = Math.max(...dragonCrossArt.map(item => Array.from(item).length));
-
-function scanArtLine(line: string, progress: number) {
-  const cells = Array.from(line.padEnd(ART_COLUMNS, ' '));
-  const cutoff = Math.floor(progress * ART_COLUMNS);
-  return cells.map((cell, column) => column <= cutoff ? cell : ' ').join('');
-}
-
-function artColor(index: number, tick: number, progress: number, fading: boolean) {
+function artColor(index: number, tick: number, glowLevel: number, fading: boolean) {
   if (fading) return index % 2 === 0 ? palette.dim : palette.amberDim;
-  if (progress < 0.24) return palette.cyanSoft;
   const pulse = (tick * 2 + index * 3) % 20;
-  if (pulse < 2 && progress > 0.72) return palette.ink;
-  if (pulse === 10 || pulse === 11) return palette.amber;
+  if (glowLevel > 0.86 && pulse < 5) return palette.ink;
+  if (glowLevel > 0.62 && (pulse === 8 || pulse === 9 || index % 7 === 0)) return palette.amber;
+  if (glowLevel < 0.28) return palette.cyanSoft;
   return palette.cyan;
 }
 
@@ -55,8 +47,11 @@ export function BootSequence({size, onComplete}: BootSequenceProps) {
   const contentHeight = Math.max(18, Math.min(size.height - 3, 34));
   const dragonPage = tick < 80;
   const fading = tick >= 66 && dragonPage;
-  // Test 4: a horizontal scan reveals the dragon from left to right.
-  const scanProgress = clamp((tick - 8) / 42, 0, 1);
+  // Test 5: the complete dragon emits one short ANSI glow pulse.
+  const glowPhase = clamp((tick - 8) / 56, 0, 1);
+  const glowLevel = glowPhase <= 0.12
+    ? glowPhase / 0.12
+    : 0.5 + 0.5 * Math.sin((glowPhase - 0.12) * Math.PI * 2.4);
   const fadeProgress = clamp((tick - 66) / 14, 0, 1);
 
   useEffect(() => {
@@ -75,9 +70,9 @@ export function BootSequence({size, onComplete}: BootSequenceProps) {
       const rowIndex = topOffset + index;
       if (rowIndex >= 0 && rowIndex < rows.length) {
         rows[rowIndex] = {
-          text: fixedArtLine(scanArtLine(line, scanProgress), width),
-          color: artColor(index, tick, scanProgress, fading),
-          dim: fading || scanProgress < 0.24
+          text: fixedArtLine(line, width),
+          color: artColor(index, tick, glowLevel, fading),
+          dim: fading || glowLevel < 0.28
         };
       }
     }
