@@ -1,8 +1,11 @@
 import {useState} from 'react';
 import {useInterval} from './useInterval.js';
 
-export function useTicker(delay = 90) {
+// `until` stops the interval once the sequence has played out, so a finished
+// animation costs nothing instead of re-rendering the tree forever.
+export function useTicker(delay = 90, until?: number) {
   const [tick, setTick] = useState(0);
-  useInterval(() => setTick(value => value + 1), delay);
+  const running = until === undefined || tick < until;
+  useInterval(() => setTick(value => value + 1), running ? delay : null);
   return tick;
 }
