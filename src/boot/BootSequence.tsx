@@ -36,8 +36,12 @@ function randomArtLine(line: string, row: number, progress: number, tick: number
   }).join('');
 }
 
-function artColor(index: number, progress: number, fading: boolean) {
-  if (fading) return index % 2 === 0 ? palette.dim : palette.amberDim;
+function artColor(index: number, progress: number, fading: boolean, flash: boolean, fadeProgress: number) {
+  if (flash || (fading && fadeProgress < 0.24)) {
+    const flashColors = [palette.ink, palette.cyan, palette.amber];
+    return flashColors[index % flashColors.length];
+  }
+  if (fading) return fadeProgress < 0.62 ? palette.amberDim : palette.dim;
   return progress < 0.58 ? palette.cyanSoft : palette.cyan;
 }
 
@@ -56,10 +60,11 @@ export function BootSequence({size, onComplete}: BootSequenceProps) {
   const width = Math.max(64, Math.min(size.width - 4, 118));
   const contentHeight = Math.max(18, Math.min(size.height - 3, 34));
   const dragonPage = tick < 80;
-  const fading = tick >= 66 && dragonPage;
-  // Test 6: deterministic random Braille points settle into the dragon.
-  const randomProgress = clamp((tick - 8) / 52, 0, 1);
-  const fadeProgress = clamp((tick - 66) / 14, 0, 1);
+  const flash = tick >= 36 && tick < 58 && dragonPage;
+  const fading = tick >= 58 && dragonPage;
+  // Test 6 extension: random points settle, flash brightly, then vanish gradually.
+  const randomProgress = clamp((tick - 8) / 32, 0, 1);
+  const fadeProgress = clamp((tick - 58) / 22, 0, 1);
 
   useEffect(() => {
     if (tick >= 94) onComplete();
@@ -76,10 +81,12 @@ export function BootSequence({size, onComplete}: BootSequenceProps) {
     for (const [index, line] of dragonCrossArt.entries()) {
       const rowIndex = topOffset + index;
       if (rowIndex >= 0 && rowIndex < rows.length) {
+        const visibleProgress = fading ? 1 - fadeProgress : flash ? 1 : randomProgress;
+        const visibleLine = flash ? line : randomArtLine(line, index, visibleProgress, fading ? 991 : tick);
         rows[rowIndex] = {
-          text: fixedArtLine(randomArtLine(line, index, randomProgress, tick), width),
-          color: artColor(index, randomProgress, fading),
-          dim: fading || randomProgress < 0.32
+          text: fixedArtLine(visibleLine, width),
+          color: artColor(index, visibleProgress, fading, flash, fadeProgress),
+          dim: !flash && (fading || randomProgress < 0.32)
         };
       }
     }
