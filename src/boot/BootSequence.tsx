@@ -62,9 +62,10 @@ export function BootSequence({size, onComplete}: BootSequenceProps) {
     if (tick >= 94) onComplete();
   }, [onComplete, tick]);
 
+  // Ink must receive real spaces, not empty strings, to preserve the fixed frame.
   const rows: Array<{text: string; color: string; dim?: boolean}> = Array.from(
     {length: contentHeight},
-    () => ({text: '', color: palette.shadow, dim: true})
+    () => ({text: ' '.repeat(width), color: palette.shadow, dim: true})
   );
 
   if (dragonPage) {
