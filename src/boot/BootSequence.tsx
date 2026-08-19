@@ -178,8 +178,8 @@ function toRow(cells: Cell[]): Row {
 
 export function BootSequence({size, onComplete}: BootSequenceProps) {
   const tick = useTicker(TICK_MS);
-  const width = Math.max(64, Math.min(size.width - 4, 118));
-  const contentHeight = Math.max(18, Math.min(size.height - 3, 34));
+  const width = clamp(size.width - 4, 24, 118);
+  const contentHeight = clamp(size.height - 3, 8, 34);
 
   useEffect(() => {
     if (tick >= BOOT_TICKS) onComplete();

@@ -1,14 +1,17 @@
 import {useEffect, useState} from 'react';
-import {clamp} from './clamp.js';
 
 export type TerminalSize = {
   width: number;
   height: number;
 };
 
+// Report what the terminal actually is. Clamping this UP was a quiet lie: on a
+// window narrower than the floor, every screen drew wider than the terminal,
+// each line wrapped, the frame grew past the viewport, and the whole thing
+// juddered. A screen that wants a minimum must handle not getting it.
 const getSize = (): TerminalSize => ({
-  width: clamp(process.stdout.columns || 96, 68, 160),
-  height: clamp(process.stdout.rows || 32, 24, 60)
+  width: process.stdout.columns || 96,
+  height: process.stdout.rows || 32
 });
 
 export function useTerminalSize() {

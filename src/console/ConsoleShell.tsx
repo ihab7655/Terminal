@@ -4,6 +4,7 @@ import {Composer} from '../composer/Composer.js';
 import {ConversationStory} from '../conversation/ConversationStory.js';
 import {LAUNCHER_HEIGHT, LauncherOverlay} from '../launcher/LauncherOverlay.js';
 import {palette} from '../theme/palette.js';
+import {clamp} from '../utils/clamp.js';
 import type {TerminalSize} from '../utils/useTerminalSize.js';
 
 type ConsoleShellProps = {
@@ -25,8 +26,8 @@ export function ConsoleShell({
   launcherOpen,
   selectedIndex
 }: ConsoleShellProps) {
-  const width = Math.min(size.width - 2, 110);
-  const shellHeight = Math.max(22, size.height - 2);
+  const width = clamp(size.width - 2, 24, 110);
+  const shellHeight = clamp(size.height - 2, 8, 60);
 
   // The launcher rises from the composer instead of replacing the story, so
   // the story keeps whatever rows the panel leaves rather than vanishing.
