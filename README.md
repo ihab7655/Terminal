@@ -17,4 +17,6 @@ Controls:
 - `Ctrl+K`: open launcher
 - number keys or arrows: choose a launcher view
 - `Escape`: close overlay
-- `Q`: quit
+- composer: arrows move the caret, `Up`/`Down` recall history, `Enter` sends,
+  `Ctrl+A`/`Ctrl+E` jump to the ends, `Ctrl+U` clears, `Ctrl+D` deletes forward
+- `Ctrl+C`: quit

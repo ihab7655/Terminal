@@ -9,11 +9,18 @@ import type {TerminalSize} from '../utils/useTerminalSize.js';
 type ConsoleShellProps = {
   size: TerminalSize;
   composerValue: string;
+  composerCursor: number;
   launcherOpen: boolean;
   selectedIndex: number;
 };
 
-export function ConsoleShell({size, composerValue, launcherOpen, selectedIndex}: ConsoleShellProps) {
+export function ConsoleShell({
+  size,
+  composerValue,
+  composerCursor,
+  launcherOpen,
+  selectedIndex
+}: ConsoleShellProps) {
   const width = Math.min(size.width - 2, 110);
   const shellHeight = Math.max(22, size.height - 2);
 
@@ -49,7 +56,7 @@ export function ConsoleShell({size, composerValue, launcherOpen, selectedIndex}:
       )}
 
       <Box flexGrow={1} />
-      <Composer value={composerValue} width={width} focused={!launcherOpen} />
+      <Composer value={composerValue} cursor={composerCursor} width={width} focused={!launcherOpen} />
     </Box>
   );
 }
