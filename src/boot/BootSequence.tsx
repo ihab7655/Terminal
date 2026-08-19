@@ -22,18 +22,14 @@ function fixedArtLine(line: string, width: number) {
   return `${' '.repeat(left)}${line.padEnd(artWidth, ' ')}`.slice(0, width);
 }
 
-function artRadius(progress: number) {
-  const middle = (dragonCrossArt.length - 1) / 2;
-  return progress * (middle + 2);
-}
-
-function artColor(index: number, tick: number, fading: boolean) {
+function artColor(index: number, tick: number, fadeLevel: number, fading: boolean) {
   if (fading) return index % 2 === 0 ? palette.dim : palette.amberDim;
+  if (fadeLevel < 0.22) return palette.dim;
+  if (fadeLevel < 0.48) return palette.cyanSoft;
   const pulse = (tick * 2 + index * 3) % 20;
-  if (pulse < 2) return palette.ink;
-  if (pulse < 7) return palette.cyan;
+  if (pulse < 2 && fadeLevel > 0.72) return palette.ink;
   if (pulse === 10 || pulse === 11) return palette.amber;
-  return palette.cyanSoft;
+  return palette.cyan;
 }
 
 function handoffRow(width: number, tick: number, seed: number) {
@@ -52,11 +48,9 @@ export function BootSequence({size, onComplete}: BootSequenceProps) {
   const contentHeight = Math.max(18, Math.min(size.height - 3, 34));
   const dragonPage = tick < 80;
   const fading = tick >= 66 && dragonPage;
-  // Test 1: assemble the dragon from its central body outward.
-  const revealProgress = clamp((tick - 8) / 42, 0, 1);
+  // Test 2: fade the complete dragon from dim to bright without moving it.
+  const fadeInLevel = clamp((tick - 8) / 42, 0, 1);
   const fadeProgress = clamp((tick - 66) / 14, 0, 1);
-  const radius = fading ? artRadius(1 - fadeProgress) : artRadius(revealProgress);
-  const middle = (dragonCrossArt.length - 1) / 2;
 
   useEffect(() => {
     if (tick >= 94) onComplete();
@@ -71,13 +65,12 @@ export function BootSequence({size, onComplete}: BootSequenceProps) {
   if (dragonPage) {
     const topOffset = Math.max(0, Math.floor((contentHeight - dragonCrossArt.length) / 2));
     for (const [index, line] of dragonCrossArt.entries()) {
-      if (Math.abs(index - middle) > radius) continue;
       const rowIndex = topOffset + index;
       if (rowIndex >= 0 && rowIndex < rows.length) {
         rows[rowIndex] = {
           text: fixedArtLine(line, width),
-          color: artColor(index, tick, fading),
-          dim: fading || (tick < 28 && index % 2 === 1)
+          color: artColor(index, tick, fadeInLevel, fading),
+          dim: fading || fadeInLevel < 0.38
         };
       }
     }
