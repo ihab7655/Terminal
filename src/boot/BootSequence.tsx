@@ -249,16 +249,18 @@ export function BootSequence({size, onComplete}: BootSequenceProps) {
     paint(grid, artTop + index, left, art, dragonColor(index, tick, phase));
   }
 
-  // The welcome text dims away with the dragon instead of blinking out.
-  const exitColor = (color: string) =>
-    exitProgress > 0.66 ? palette.shadow : exitProgress > 0.25 ? palette.dim : color;
+  // The welcome text dims away with the dragon instead of blinking out. Past
+  // the fade nothing is drawn at all: painting it in a darker colour only
+  // hides it on a black background, and shows as a speck on any other.
+  const gone = exitProgress >= 1;
+  const exitColor = (color: string) => (exitProgress > 0.25 ? palette.dim : color);
 
-  if (layout.greeting && tick >= GREETING_FROM) {
+  if (layout.greeting && tick >= GREETING_FROM && !gone) {
     const shade = exitColor(fadeStep(tick - GREETING_FROM, GREETING_RAMP));
     paint(grid, greetingTop, greetingLeft, greetingText, shade);
   }
 
-  if (nameProgress > 0) {
+  if (nameProgress > 0 && !gone) {
     const revealed = Math.round(nameProgress * nameWidth);
     const settled = nameProgress >= 1;
     const bodyEnd = settled ? nameWidth : Math.max(0, revealed - 1);
@@ -272,7 +274,7 @@ export function BootSequence({size, onComplete}: BootSequenceProps) {
     }
   }
 
-  if (layout.tagline && tick >= TAGLINE_FROM) {
+  if (layout.tagline && tick >= TAGLINE_FROM && !gone) {
     const shade = exitColor(fadeStep(tick - TAGLINE_FROM, TAGLINE_RAMP));
     paint(grid, taglineTop, taglineLeft, identity.tagline, shade);
   }

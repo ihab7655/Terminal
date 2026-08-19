@@ -20,7 +20,13 @@ function starAt(row: number, column: number, tick: number, level: number): SkyMa
   const twinkle = Math.sin(tick / 9 + hash(row, column, 43) * Math.PI * 2);
   if (twinkle > 0.85) return {ch: '+', color: palette.cyanSoft};
   if (twinkle > 0.2) return {ch: ':', color: palette.dim};
-  return {ch: '.', color: palette.shadow};
+  // The faintest phase draws NOTHING. It used to be a dot in a colour darker
+  // than the background, which is a bet on the background being black — it
+  // showed as a speck on any other. Painting it faint instead was worse: the
+  // attribute breaks the styled run at every star, and the segment count per
+  // frame rose by half, which is what made the screen judder. Absence costs no
+  // segment and is correct on every theme.
+  return null;
 }
 
 // A minority of rows carry a stream that drifts at its own speed and spacing.
