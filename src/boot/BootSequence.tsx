@@ -22,13 +22,23 @@ function fixedArtLine(line: string, width: number) {
   return `${' '.repeat(left)}${line.padEnd(artWidth, ' ')}`.slice(0, width);
 }
 
-function artColor(index: number, tick: number, glowLevel: number, fading: boolean) {
+function randomHash(row: number, column: number, tick: number) {
+  let value = (row + 1) * 374761393 + (column + 1) * 668265263 + (tick + 1) * 1442695041;
+  value = (value ^ (value >>> 13)) * 1274126177;
+  return ((value ^ (value >>> 16)) >>> 0) / 0xffffffff;
+}
+
+function randomArtLine(line: string, row: number, progress: number, tick: number) {
+  return Array.from(line).map((cell, column) => {
+    const active = (cell.codePointAt(0) ?? 0) > 0x2800;
+    if (!active) return ' ';
+    return randomHash(row, column, tick) <= progress ? cell : ' ';
+  }).join('');
+}
+
+function artColor(index: number, progress: number, fading: boolean) {
   if (fading) return index % 2 === 0 ? palette.dim : palette.amberDim;
-  const pulse = (tick * 2 + index * 3) % 20;
-  if (glowLevel > 0.86 && pulse < 5) return palette.ink;
-  if (glowLevel > 0.62 && (pulse === 8 || pulse === 9 || index % 7 === 0)) return palette.amber;
-  if (glowLevel < 0.28) return palette.cyanSoft;
-  return palette.cyan;
+  return progress < 0.58 ? palette.cyanSoft : palette.cyan;
 }
 
 function handoffRow(width: number, tick: number, seed: number) {
@@ -47,11 +57,8 @@ export function BootSequence({size, onComplete}: BootSequenceProps) {
   const contentHeight = Math.max(18, Math.min(size.height - 3, 34));
   const dragonPage = tick < 80;
   const fading = tick >= 66 && dragonPage;
-  // Test 5: the complete dragon emits one short ANSI glow pulse.
-  const glowPhase = clamp((tick - 8) / 56, 0, 1);
-  const glowLevel = glowPhase <= 0.12
-    ? glowPhase / 0.12
-    : 0.5 + 0.5 * Math.sin((glowPhase - 0.12) * Math.PI * 2.4);
+  // Test 6: deterministic random Braille points settle into the dragon.
+  const randomProgress = clamp((tick - 8) / 52, 0, 1);
   const fadeProgress = clamp((tick - 66) / 14, 0, 1);
 
   useEffect(() => {
@@ -70,9 +77,9 @@ export function BootSequence({size, onComplete}: BootSequenceProps) {
       const rowIndex = topOffset + index;
       if (rowIndex >= 0 && rowIndex < rows.length) {
         rows[rowIndex] = {
-          text: fixedArtLine(line, width),
-          color: artColor(index, tick, glowLevel, fading),
-          dim: fading || glowLevel < 0.28
+          text: fixedArtLine(randomArtLine(line, index, randomProgress, tick), width),
+          color: artColor(index, randomProgress, fading),
+          dim: fading || randomProgress < 0.32
         };
       }
     }
