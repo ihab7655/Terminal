@@ -2,6 +2,7 @@ import React, {useState} from 'react';
 import {Box, useInput} from 'ink';
 import {BootSequence} from './boot/BootSequence.js';
 import {ConsoleShell} from './console/ConsoleShell.js';
+import {EngineDiagnostics} from './diagnostics/EngineDiagnostics.js';
 import {launcherItems} from './data/fakeConversation.js';
 import {clamp} from './utils/clamp.js';
 import {useTerminalSize} from './utils/useTerminalSize.js';
@@ -11,6 +12,9 @@ const MAX_INPUT = 120;
 export function App() {
   const size = useTerminalSize();
   const [bootComplete, setBootComplete] = useState(false);
+  // Placed after the dragon for now. What gates it — first run only, or every
+  // launch — is still open, so it is a plain step in the sequence.
+  const [diagnosticsComplete, setDiagnosticsComplete] = useState(false);
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [value, setValue] = useState('');
@@ -49,7 +53,7 @@ export function App() {
   // Ctrl+C quits: Ink's exitOnCtrlC owns it, which keeps every printable key
   // free for the composer. A plain letter must never be a command.
   useInput((input, key) => {
-    if (!bootComplete) return;
+    if (!bootComplete || !diagnosticsComplete) return;
 
     if (key.ctrl && input === 'k') {
       setLauncherOpen(open => !open);
@@ -126,7 +130,7 @@ export function App() {
 
   return (
     <Box flexDirection="column">
-      {bootComplete ? (
+      {bootComplete && diagnosticsComplete ? (
         <ConsoleShell
           size={size}
           composerValue={value}
@@ -134,6 +138,8 @@ export function App() {
           launcherOpen={launcherOpen}
           selectedIndex={selectedIndex}
         />
+      ) : bootComplete ? (
+        <EngineDiagnostics size={size} onComplete={() => setDiagnosticsComplete(true)} />
       ) : (
         <BootSequence size={size} onComplete={() => setBootComplete(true)} />
       )}
