@@ -46,42 +46,47 @@ const prefixFor = (item: StoryItem, working: boolean, tick: number) => {
 type Entry = {item: StoryItem; details: string[]; working: boolean};
 
 // The label column: a three character prefix and a twelve character name.
-const LABEL_COLS = 15;
-// Details hang under the text, indented by the label plus their own two spaces.
-const DETAIL_COLS = 17;
+const PREFIX_COLS = 3;
+const NAME_COLS = 12;
+const LABEL_COLS = PREFIX_COLS + NAME_COLS;
+// Details hang further in again, under the message rather than under the label.
+const DETAIL_COLS = LABEL_COLS + 5;
 
-// How many rows a line of text costs once it has been wrapped to fit. Greedy
-// word wrapping, which is what Ink does — counting the text as one row was the
-// bug: at 60 columns every entry wrapped to two or three and the transcript
-// spent nine rows where five had been budgeted, so the frame grew past the
-// terminal and it scrolled on every repaint.
-function wrappedRows(text: string, width: number) {
-  if (width <= 0) return 1;
-  let rows = 1;
-  let used = 0;
+// The transcript wraps its own text rather than handing it to Ink, for two
+// reasons. Counting the text as one row was the first bug: at 60 columns every
+// entry wrapped to two or three, and the transcript spent nine rows where five
+// had been budgeted, so the frame grew past the terminal and it scrolled on
+// every repaint. Wrapping it here and counting the same lines makes the budget
+// and the drawing agree by construction rather than by two wrappers happening
+// to reach the same answer.
+//
+// The second was alignment. Left to Ink, the text is a flex sibling of the
+// label and its continuation lines settle against a different edge: measured
+// at 62 columns, every wrapped line began exactly three columns to the left of
+// the line it continued — 17 then 14 for an entry, 22 then 19 for a detail.
+// Drawn a line at a time under an indent of our own, they cannot drift.
+function wrapLines(text: string, width: number): string[] {
+  if (width <= 0) return [text];
+  const lines: string[] = [];
+  let line = '';
   for (const word of text.split(' ')) {
-    const cost = word.length;
-    if (used === 0) {
-      used = cost;
-    } else if (used + 1 + cost <= width) {
-      used += 1 + cost;
-    } else {
-      rows++;
-      used = cost;
-    }
+    if (line === '') line = word;
+    else if (line.length + 1 + word.length <= width) line += ' ' + word;
+    else { lines.push(line); line = word; }
     // A single word longer than the line is broken across as many as it needs.
-    while (used > width) {
-      rows++;
-      used -= width;
+    while (line.length > width) {
+      lines.push(line.slice(0, width));
+      line = line.slice(width);
     }
   }
-  return rows;
+  lines.push(line);
+  return lines;
 }
 
 const rowsFor = (entry: Entry, first: boolean, width: number) =>
   (first ? 0 : 1) +
-  wrappedRows(entry.item.text, width - LABEL_COLS) +
-  entry.details.reduce((sum, detail) => sum + wrappedRows(`   ${detail}`, width - DETAIL_COLS), 0);
+  wrapLines(entry.item.text, width - LABEL_COLS).length +
+  entry.details.reduce((sum, detail) => sum + wrapLines(detail, width - DETAIL_COLS).length, 0);
 
 // Keeps the newest exchanges when the panel below leaves less room, the way a
 // transcript scrolls rather than truncating from the end.
@@ -125,8 +130,9 @@ export function ConversationStory({width, maxRows, dimmed}: ConversationStoryPro
   }
 
   // paddingX={1} on each side is what the entries actually get to wrap inside.
+  const inner = width - 2;
   const budget = maxRows ?? Number.POSITIVE_INFINITY;
-  const {entries, hidden} = fitToRows(revealed, budget, width - 2);
+  const {entries, hidden} = fitToRows(revealed, budget, inner);
 
   // Given no rows, take none. Returning the "N earlier entries above" banner
   // instead spent a row the shell had not budgeted, and opening the launcher
@@ -141,36 +147,42 @@ export function ConversationStory({width, maxRows, dimmed}: ConversationStoryPro
         </Text>
       )}
 
-      {entries.map(({item, details, working}, index) => (
-        <Box key={item.id} flexDirection="column" marginTop={index === 0 ? 0 : 1}>
-          <Box>
-            <Text color={dimmed ? palette.muted : toneColor[item.tone]} bold={!dimmed} dimColor={dimmed}>
-              {`${prefixFor(item, working && !dimmed, tick).padEnd(3, ' ')}${item.label.padEnd(12, ' ')}`}
-            </Text>
-            <Text
-              color={dimmed ? palette.muted : item.tone === 'user' ? palette.ink : palette.cyanSoft}
-              dimColor={dimmed}
-              wrap="wrap"
-            >
-              {item.text}
-            </Text>
-          </Box>
+      {entries.map(({item, details, working}, index) => {
+        const label =
+          prefixFor(item, working && !dimmed, tick).padEnd(PREFIX_COLS, ' ') +
+          item.label.padEnd(NAME_COLS, ' ');
+        const messageColor = dimmed ? palette.muted : item.tone === 'user' ? palette.ink : palette.cyanSoft;
+        const detailColor = dimmed ? palette.dim : item.tone === 'tool' ? palette.cyanSoft : palette.muted;
 
-          {details.length > 0 && (
-            <Box flexDirection="column" marginLeft={17} marginTop={0}>
-              {details.map(detail => (
-                <Text
-                  key={detail}
-                  color={dimmed ? palette.dim : item.tone === 'tool' ? palette.cyanSoft : palette.muted}
-                  dimColor
-                >
-                  {`   ${detail}`}
+        // Each row is ONE Text. The label and the message are nested inside it,
+        // which styles them inline instead of making them two flex children
+        // laid out against edges of their own.
+        return (
+          <Box key={item.id} flexDirection="column" marginTop={index === 0 ? 0 : 1}>
+            {wrapLines(item.text, inner - LABEL_COLS).map((line, at) => (
+              <Text key={at}>
+                <Text color={dimmed ? palette.muted : toneColor[item.tone]} bold={!dimmed} dimColor={dimmed}>
+                  {at === 0 ? label : ' '.repeat(LABEL_COLS)}
                 </Text>
-              ))}
-            </Box>
-          )}
-        </Box>
-      ))}
+                <Text color={messageColor} dimColor={dimmed}>
+                  {line}
+                </Text>
+              </Text>
+            ))}
+
+            {details.flatMap(detail =>
+              wrapLines(detail, inner - DETAIL_COLS).map((line, at) => (
+                <Text key={`${detail}-${at}`}>
+                  <Text>{' '.repeat(DETAIL_COLS)}</Text>
+                  <Text color={detailColor} dimColor>
+                    {line}
+                  </Text>
+                </Text>
+              ))
+            )}
+          </Box>
+        );
+      })}
     </Box>
   );
 }
