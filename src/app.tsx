@@ -9,6 +9,33 @@ import {useTerminalSize} from './utils/useTerminalSize.js';
 
 const MAX_INPUT = 120;
 
+// Someone reaching for the keyboard, rather than a byte arriving on stdin: a
+// printable character that is not part of a chord, or one of the keys a person
+// presses to move a screen along.
+function pressedAKey(input: string, key: {[flag: string]: boolean}) {
+  // The named keys count first. Ink reports a bare Escape with meta set too,
+  // so asking about the chord flags before them lost Escape entirely.
+  if (
+    key.return ||
+    key.escape ||
+    key.tab ||
+    key.upArrow ||
+    key.downArrow ||
+    key.leftArrow ||
+    key.rightArrow ||
+    key.pageUp ||
+    key.pageDown ||
+    key.backspace ||
+    key.delete
+  ) {
+    return true;
+  }
+  // A chord is aimed at something, not at getting the screen out of the way —
+  // and a stray NUL arrives as one, reported as ctrl with a backtick.
+  if (key.ctrl || key.meta) return false;
+  return [...input].some(char => char >= ' ' && char !== '\u007f');
+}
+
 export function App() {
   const size = useTerminalSize();
   const [bootComplete, setBootComplete] = useState(false);
@@ -53,7 +80,21 @@ export function App() {
   // Ctrl+C quits: Ink's exitOnCtrlC owns it, which keeps every printable key
   // free for the composer. A plain letter must never be a command.
   useInput((input, key) => {
-    if (!bootComplete || !diagnosticsComplete) return;
+    // Any key during the opening goes straight to the console. The welcome page
+    // and the diagnostics screen run 15.8 seconds between them, which is worth
+    // watching once and tiresome by the tenth run. The key that skips is spent
+    // on skipping and does not also reach the composer.
+    //
+    // A key, though, and not merely something on stdin. Skipping on anything at
+    // all meant a single NUL byte — which arrives as ctrl+` whenever stdin is
+    // not a keyboard — jumped straight past both screens: recorded from a pty,
+    // the welcome page and the diagnostics screen never rendered once.
+    if (!bootComplete || !diagnosticsComplete) {
+      if (!pressedAKey(input, key)) return;
+      setBootComplete(true);
+      setDiagnosticsComplete(true);
+      return;
+    }
 
     if (key.ctrl && input === 'k') {
       setLauncherOpen(open => !open);

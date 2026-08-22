@@ -28,6 +28,8 @@ npm run dev
 
 Controls:
 
+- any key during the opening: skip the welcome page and the diagnostics screen
+  and go straight to the console
 - `Ctrl+K`: open launcher
 - number keys or arrows: choose a launcher view
 - `Escape`: close overlay
