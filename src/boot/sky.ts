@@ -29,23 +29,37 @@ function starAt(row: number, column: number, tick: number, level: number): SkyMa
   return null;
 }
 
+// Whether a row carries a stream, and how that stream drifts, depends on the
+// row and nothing else — but the level it is tested against varies per cell, so
+// the draw cannot be resolved here. Hoisting the three hashes out of the column
+// loop turns them from one per cell into one per row: at 240x70 that is 16,800
+// hash calls a frame down to 70.
+export type SkyRow = {draw: number; speed: number; period: number};
+
+export function skyRow(row: number): SkyRow {
+  return {
+    draw: hash(row, 0, 91),
+    speed: 1 + Math.floor(hash(row, 1, 5) * 3),
+    period: 26 + Math.floor(hash(row, 2, 9) * 22)
+  };
+}
+
 // A minority of rows carry a stream that drifts at its own speed and spacing.
-function flowAt(row: number, column: number, tick: number, level: number): SkyMark | null {
-  if (level <= 0 || hash(row, 0, 91) >= STREAM_CHANCE * level) return null;
-  const speed = 1 + Math.floor(hash(row, 1, 5) * 3);
-  const period = 26 + Math.floor(hash(row, 2, 9) * 22);
-  const offset = (column + tick * speed) % period;
+function flowAt(line: SkyRow, column: number, tick: number, level: number): SkyMark | null {
+  if (level <= 0 || line.draw >= STREAM_CHANCE * level) return null;
+  const offset = (column + tick * line.speed) % line.period;
   if (offset === 0) return {ch: '+', color: palette.cyanSoft};
   if (offset === 1 || offset === 2) return {ch: '-', color: palette.dim};
   return null;
 }
 
 export function skyAt(
+  line: SkyRow,
   row: number,
   column: number,
   tick: number,
   starLevel: number,
   flowLevel: number
 ): SkyMark | null {
-  return flowAt(row, column, tick, flowLevel) ?? starAt(row, column, tick, starLevel);
+  return flowAt(line, column, tick, flowLevel) ?? starAt(row, column, tick, starLevel);
 }

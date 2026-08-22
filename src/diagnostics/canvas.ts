@@ -7,8 +7,6 @@ import {palette} from '../theme/palette.js';
 // darker hex value: the terminal applies it relative to whatever background
 // the user's theme has, which an absolute colour cannot do.
 export type Cell = {ch: string; color: string; bold?: boolean; dim?: boolean};
-export type Segment = {text: string; color: string; bold?: boolean; dim?: boolean};
-export type Row = Segment[];
 
 export const EMPTY: Cell = {ch: ' ', color: palette.shadow};
 
@@ -58,16 +56,4 @@ export function paintLines(
   dim?: boolean
 ) {
   for (const [index, line] of lines.entries()) paint(canvas, row + index, column, line, color, bold, dim);
-}
-
-export function toRows(canvas: Cell[][]): Row[] {
-  return canvas.map(cells => {
-    const segments: Segment[] = [];
-    for (const cell of cells) {
-      const last = segments[segments.length - 1];
-      if (last && last.color === cell.color && last.bold === cell.bold && last.dim === cell.dim) last.text += cell.ch;
-      else segments.push({text: cell.ch, color: cell.color, bold: cell.bold, dim: cell.dim});
-    }
-    return segments;
-  });
 }

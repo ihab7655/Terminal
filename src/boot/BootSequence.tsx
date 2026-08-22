@@ -3,11 +3,13 @@ import {Box, Text} from 'ink';
 import {useTicker} from '../animation/useTicker.js';
 import {identity} from '../theme/identity.js';
 import {palette} from '../theme/palette.js';
+import {frame} from '../layout/frame.js';
+import {styleRow} from '../utils/styleRow.js';
 import {clamp} from '../utils/clamp.js';
 import type {TerminalSize} from '../utils/useTerminalSize.js';
 import {GLYPH_HEIGHT, blockTextWidth, renderBlockText} from './blockFont.js';
 import {dragonCrossArt} from './dragonCrossArt.js';
-import {skyAt} from './sky.js';
+import {skyAt, skyRow} from './sky.js';
 
 type BootSequenceProps = {
   size: TerminalSize;
@@ -37,8 +39,6 @@ export const BOOT_TICKS = EXIT_FROM + EXIT_TICKS - 2;
 export const ART_WIDTH = Math.max(...dragonCrossArt.map(line => line.length));
 export const artLeft = (width: number) => Math.max(0, Math.floor((width - ART_WIDTH) / 2));
 
-type Segment = {text: string; color: string; bold?: boolean};
-type Row = Segment[];
 type Cell = {ch: string; color: string; bold?: boolean};
 type Rect = {top: number; left: number; height: number; width: number};
 
@@ -142,7 +142,20 @@ const FLOW_STOPS = [
 function distanceToRect(rect: Rect, row: number, column: number) {
   const dx = Math.max(0, rect.left - column, column - (rect.left + rect.width - 1));
   const dy = Math.max(0, rect.top - row, row - (rect.top + rect.height - 1));
-  return Math.hypot(dx, dy * 2);
+  // sqrt of the sum rather than Math.hypot, which guards against overflow at
+  // magnitudes these coordinates never reach and costs several times as much.
+  return Math.sqrt(dx * dx + 4 * dy * dy);
+}
+
+// True when NO rect can reach this row: the vertical term alone already puts
+// every one of them at or past the halo edge, so the whole row falls off to 1
+// and not a single column needs measuring. On a tall window most rows are this.
+function rowBeyondHalo(rects: Rect[], row: number) {
+  for (const rect of rects) {
+    const dy = Math.max(0, rect.top - row, row - (rect.top + rect.height - 1));
+    if (dy * 2 < HALO_RADIUS) return false;
+  }
+  return true;
 }
 
 const QUIET_RADIUS = 2;
@@ -170,20 +183,9 @@ function paint(grid: Cell[][], top: number, left: number, text: string, color: s
   }
 }
 
-function toRow(cells: Cell[]): Row {
-  const segments: Segment[] = [];
-  for (const cell of cells) {
-    const last = segments[segments.length - 1];
-    if (last && last.color === cell.color && last.bold === cell.bold) last.text += cell.ch;
-    else segments.push({text: cell.ch, color: cell.color, bold: cell.bold});
-  }
-  return segments;
-}
-
 export function BootSequence({size, onComplete}: BootSequenceProps) {
   const tick = useTicker(TICK_MS);
-  const width = clamp(size.width - 4, 24, 118);
-  const contentHeight = clamp(size.height - 3, 8, 34);
+  const {boxWidth, boxHeight, width, height: contentHeight} = frame(size);
 
   useEffect(() => {
     if (tick >= BOOT_TICKS) onComplete();
@@ -237,14 +239,18 @@ export function BootSequence({size, onComplete}: BootSequenceProps) {
   // Until the dragon starts forming there is nothing to clear a space for, so
   // the sky covers the whole page and the halo opens as the art arrives.
   const halo = clamp((tick - ASSEMBLE_FROM) / HALO_TICKS, 0, 1);
-  const grid: Cell[][] = Array.from({length: contentHeight}, (_, row) =>
-    Array.from({length: width}, (_, column) => {
-      const falloff = 1 - halo * (1 - quietFalloff(quiet, row, column));
+  const grid: Cell[][] = Array.from({length: contentHeight}, (_, row) => {
+    const line = skyRow(row);
+    // Before the halo opens, and on any row it cannot reach, the falloff is a
+    // flat 1 and measuring each cell against every rect only spends time.
+    const open = halo > 0 && !rowBeyondHalo(quiet, row);
+    return Array.from({length: width}, (_, column) => {
+      const falloff = open ? 1 - halo * (1 - quietFalloff(quiet, row, column)) : 1;
       if (falloff <= 0) return blank;
-      const mark = skyAt(row, column, tick, starLevel * falloff, flowLevel * falloff);
+      const mark = skyAt(line, row, column, tick, starLevel * falloff, flowLevel * falloff);
       return mark ? {ch: mark.ch, color: mark.color} : blank;
-    })
-  );
+    });
+  });
 
   for (let index = 0; index < layout.dragonRows; index++) {
     const line = dragonCrossArt[index]!;
@@ -284,15 +290,9 @@ export function BootSequence({size, onComplete}: BootSequenceProps) {
   }
 
   return (
-    <Box flexDirection="column" width={width + 2} height={contentHeight + 1} paddingX={1}>
+    <Box flexDirection="column" width={boxWidth} height={boxHeight} paddingX={1}>
       {grid.map((cells, index) => (
-        <Text key={index}>
-          {toRow(cells).map((segment, segmentIndex) => (
-            <Text key={segmentIndex} color={segment.color} bold={segment.bold}>
-              {segment.text}
-            </Text>
-          ))}
-        </Text>
+        <Text key={index}>{styleRow(cells)}</Text>
       ))}
     </Box>
   );

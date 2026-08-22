@@ -2,10 +2,12 @@ import React, {useEffect} from 'react';
 import {Box, Text} from 'ink';
 import {useTicker} from '../animation/useTicker.js';
 import {systems, toolMatrix, verdict, vitals} from '../data/engineTelemetry.js';
+import {frame} from '../layout/frame.js';
+import {styleRow} from '../utils/styleRow.js';
 import {palette} from '../theme/palette.js';
 import {clamp} from '../utils/clamp.js';
 import type {TerminalSize} from '../utils/useTerminalSize.js';
-import {createCanvas, paint, paintLines, paintOpaque, toRows} from './canvas.js';
+import {createCanvas, paint, paintLines, paintOpaque} from './canvas.js';
 import {aura} from './core.js';
 import {EMBLEM_COLS, EMBLEM_ROWS, emblemFrames} from './emblemFrames.js';
 import {
@@ -51,12 +53,11 @@ const centred = (text: string, span: number) =>
 
 export function EngineDiagnostics({size, onComplete}: Props) {
   const tick = useTicker(TICK_MS, DIAGNOSTICS_TICKS);
-  // Deliberately the same arithmetic BootSequence uses. Ink erases the previous
-  // frame by its line count, so a screen that hands over to another of a
-  // different size leaves a row unerased and the terminal tears. The two frames
-  // must be identical in shape for the handoff to be invisible.
-  const width = clamp(size.width - 4, 24, 118);
-  const height = clamp(size.height - 3, 8, 34);
+  // The shape comes from the shared frame, which is what makes the handoff
+  // invisible: Ink erases the previous frame by its line count, so a screen
+  // that hands over to another of a different size leaves a row unerased and
+  // the terminal tears. This used to be the same arithmetic copied by hand.
+  const {boxWidth, boxHeight, width, height} = frame(size);
 
   useEffect(() => {
     if (tick >= DIAGNOSTICS_TICKS) onComplete();
@@ -175,15 +176,9 @@ export function EngineDiagnostics({size, onComplete}: Props) {
   }
 
   return (
-    <Box flexDirection="column" width={width + 2} height={height + 1} paddingX={1}>
-      {toRows(canvas).map((row, index) => (
-        <Text key={index}>
-          {row.map((segment, at) => (
-            <Text key={at} color={segment.color} bold={segment.bold} dimColor={segment.dim}>
-              {segment.text}
-            </Text>
-          ))}
-        </Text>
+    <Box flexDirection="column" width={boxWidth} height={boxHeight} paddingX={1}>
+      {canvas.map((cells, index) => (
+        <Text key={index}>{styleRow(cells)}</Text>
       ))}
     </Box>
   );

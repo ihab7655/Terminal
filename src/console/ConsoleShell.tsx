@@ -2,9 +2,9 @@ import React from 'react';
 import {Box, Text} from 'ink';
 import {Composer} from '../composer/Composer.js';
 import {ConversationStory} from '../conversation/ConversationStory.js';
-import {LAUNCHER_HEIGHT, LauncherOverlay} from '../launcher/LauncherOverlay.js';
+import {LauncherOverlay, planLauncher} from '../launcher/LauncherOverlay.js';
+import {frame} from '../layout/frame.js';
 import {palette} from '../theme/palette.js';
-import {clamp} from '../utils/clamp.js';
 import type {TerminalSize} from '../utils/useTerminalSize.js';
 
 type ConsoleShellProps = {
@@ -15,9 +15,15 @@ type ConsoleShellProps = {
   selectedIndex: number;
 };
 
-const HEADER_ROWS = 3;
-const STORY_MARGIN = 2;
+const SUBTITLE = 'signal calm / story view / no engine connection / local visual prototype';
+const LAUNCHER_HINT = '- hidden details available through contextual launcher -';
+
+// The title line and the composer are the shell; everything else is chrome.
+const TITLE_ROWS = 1;
 const COMPOSER_ROWS = 4;
+
+// What a line of this text costs once the terminal has wrapped it.
+const wrappedRows = (text: string, width: number) => Math.max(1, Math.ceil(text.length / Math.max(1, width)));
 
 export function ConsoleShell({
   size,
@@ -26,16 +32,39 @@ export function ConsoleShell({
   launcherOpen,
   selectedIndex
 }: ConsoleShellProps) {
-  const width = clamp(size.width - 2, 24, 110);
-  const shellHeight = clamp(size.height - 2, 8, 60);
+  // Everything spans the window. `width` is the room INSIDE the box's one
+  // column of padding — handing the children the outer width instead asked
+  // each of them for two columns more than they had, which Ink then clipped.
+  const {boxWidth, boxHeight: shellHeight, width} = frame(size);
 
-  // The launcher rises from the composer instead of replacing the story, so
-  // the story keeps whatever rows the panel leaves rather than vanishing.
-  const storyRows =
-    shellHeight - HEADER_ROWS - STORY_MARGIN - COMPOSER_ROWS - (launcherOpen ? LAUNCHER_HEIGHT + 1 : 1);
+  // Richest arrangement that still fits, the way the welcome page plans its
+  // own. A short window used to overflow instead of shedding anything: at
+  // 60x18 the shell drew 23 rows into 18, and the terminal scrolled on every
+  // repaint. The transcript is what has to survive, so the chrome goes first.
+  //
+  // The launcher rises from the composer rather than replacing the story, so
+  // it takes its rows from the same budget. It is planned against the room
+  // actually left and lists fewer surfaces rather than drawing past the frame;
+  // on a window too small to hold even its border it does not open at all,
+  // which is the honest answer when there is nowhere to put it.
+  const panel = launcherOpen ? planLauncher(width, shellHeight - TITLE_ROWS - COMPOSER_ROWS - 1) : null;
+
+  let spare = shellHeight - TITLE_ROWS - COMPOSER_ROWS - (panel ? panel.rows + 1 : 0);
+
+  const subtitleRows = 1 + wrappedRows(SUBTITLE, width);
+  const showSubtitle = spare - subtitleRows >= 3;
+  if (showSubtitle) spare -= subtitleRows;
+
+  const hintRows = 1 + wrappedRows(LAUNCHER_HINT, width);
+  const showHint = !launcherOpen && spare - hintRows >= 2;
+  if (showHint) spare -= hintRows;
+
+  // One blank row of air above the transcript, if there is any to spare.
+  const storyMargin = spare > 2 ? 1 : 0;
+  const storyRows = Math.max(0, spare - storyMargin);
 
   return (
-    <Box flexDirection="column" width={width} minHeight={shellHeight} paddingX={1}>
+    <Box flexDirection="column" width={boxWidth} minHeight={shellHeight} paddingX={1}>
       <Box justifyContent="space-between" width={width}>
         <Box>
           <Text color={palette.cyan} bold>
@@ -46,24 +75,26 @@ export function ConsoleShell({
         <Text color={palette.amber}>mock mode</Text>
       </Box>
 
-      <Box marginTop={1}>
-        <Text color={palette.dim}>
-          signal calm / story view / no engine connection / local visual prototype
-        </Text>
-      </Box>
+      {showSubtitle && (
+        <Box marginTop={1} width={width}>
+          <Text color={palette.dim} wrap="wrap">
+            {SUBTITLE}
+          </Text>
+        </Box>
+      )}
 
-      <Box flexDirection="column" marginTop={STORY_MARGIN} flexGrow={1}>
-        <ConversationStory size={size} maxRows={storyRows} dimmed={launcherOpen} />
-        {!launcherOpen && (
-          <Box marginTop={1}>
-            <Text color={palette.dim}>
-              - hidden details available through contextual launcher -
+      <Box flexDirection="column" marginTop={storyMargin} flexGrow={1}>
+        <ConversationStory width={width} maxRows={storyRows} dimmed={launcherOpen} />
+        {showHint && (
+          <Box marginTop={1} width={width}>
+            <Text color={palette.dim} wrap="wrap">
+              {LAUNCHER_HINT}
             </Text>
           </Box>
         )}
       </Box>
 
-      {launcherOpen && <LauncherOverlay selectedIndex={selectedIndex} width={width} />}
+      {panel && <LauncherOverlay selectedIndex={selectedIndex} width={width} plan={panel} />}
 
       <Composer value={composerValue} cursor={composerCursor} width={width} focused={!launcherOpen} />
     </Box>

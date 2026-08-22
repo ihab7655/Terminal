@@ -14,7 +14,9 @@ const PLACEHOLDER = 'Type a message for the engine visual...';
 const HINT = 'Ctrl+K launcher   Esc close   Enter send   Up/Down history   Ctrl+C quit';
 
 export function Composer({value, cursor, width, focused}: ComposerProps) {
-  const innerWidth = Math.max(30, width - 6);
+  // No floor. A floor here is a request for columns the terminal may not have,
+  // which is what made narrow windows wrap the composer and judder.
+  const innerWidth = Math.max(0, width - 6);
   const empty = value.length === 0;
 
   // The caret is a real cell of the line, so it sits between characters rather
