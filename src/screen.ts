@@ -1,3 +1,5 @@
+import {visibleWidth} from './style.js';
+
 // The screen this program owns, and how a frame reaches it.
 //
 // Measured from Claude Code's own binary, driven in a real pty (see
@@ -34,6 +36,13 @@ const ENTER_ALT = `${ESC}[?1049h`;
 const LEAVE_ALT = `${ESC}[?1049l`;
 const HIDE_CURSOR = `${ESC}[?25l`;
 const SHOW_CURSOR = `${ESC}[?25h`;
+// Autowrap off while we own the screen. A row that fills the last column leaves
+// the cursor in a deferred-wrap state, and what happens next is a terminal's own
+// business — none of it ours. With wrap off, a full width row is just a full
+// width row. Restored on the way out, because the shell after us expects it.
+const WRAP_OFF = `${ESC}[?7l`;
+const WRAP_ON = `${ESC}[?7h`;
+const at = (row: number) => `${ESC}[${row};1H`;
 
 let held = false;
 
@@ -41,14 +50,14 @@ let held = false;
 export function takeScreen(out: NodeJS.WriteStream = process.stdout): void {
   if (held || !out.isTTY) return;
   held = true;
-  out.write(ENTER_ALT + HIDE_CURSOR);
+  out.write(ENTER_ALT + WRAP_OFF + HIDE_CURSOR);
 }
 
 /** Give it back. Safe to call when it was never taken. */
 export function releaseScreen(out: NodeJS.WriteStream = process.stdout): void {
   if (!held) return;
   held = false;
-  out.write(SHOW_CURSOR + LEAVE_ALT);
+  out.write(SHOW_CURSOR + WRAP_ON + LEAVE_ALT);
 }
 
 // A screen left held outlives the process that held it: the user's shell comes
@@ -62,9 +71,34 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   });
 }
 
-/** Put one whole frame on the screen. `rows` are lines of text, already laid out. */
+/**
+ * Put one whole frame on the screen. `rows` are lines of text, already laid out.
+ *
+ * EVERY CELL IS WRITTEN. The obvious version — home, join the rows with
+ * newlines, erase to end — does not paint a frame; it prints text over text.
+ * `ESC[J` erases from where the cursor ENDS, so it clears what is below the
+ * last row and nothing to the right of any row above it. A row that got shorter
+ * leaves the tail of the row that was there before it, still lit.
+ *
+ * Nothing reveals this like a resize, where every row changes length at once:
+ * it is the streaked, half-erased screen that made the previous project
+ * unusable, and it survived the rebuild because the recording of a session
+ * shows the bytes sent and not the screen they land on.
+ *
+ * So: position each row absolutely, pad it to the full width, and erase only
+ * what is below the last one. Absolute positioning also means a row can fill
+ * the last column without the next row's placement depending on how this
+ * terminal handles the wrap.
+ */
 export function paint(rows: readonly string[], out: NodeJS.WriteStream = process.stdout): void {
-  out.write(BEGIN_SYNC + HOME + rows.join('\n') + ERASE_TO_END + END_SYNC);
+  const width = out.columns || 80;
+  let frame = BEGIN_SYNC;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]!;
+    const gap = width - visibleWidth(row);
+    frame += at(i + 1) + (gap > 0 ? row + ' '.repeat(gap) : row);
+  }
+  out.write(frame + ERASE_TO_END + END_SYNC);
 }
 
 /**

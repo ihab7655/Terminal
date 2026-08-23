@@ -22,6 +22,7 @@ export const colour = {
   cyan: fg('#22e7d5'),
   cyanSoft: fg('#3aa99d'),
   amber: fg('#f1b34b'),
+  amberDim: fg('#8a6a2f'),
   purple: fg('#9d78ff'),
   red: fg('#ff5d6c')
 } as const;

@@ -7,7 +7,7 @@
     "dev": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json",
-    "test": "tsx src/viewport.test.ts && tsx src/text.test.ts && tsx src/keys.test.ts"
+    "test": "tsx src/viewport.test.ts && tsx src/text.test.ts && tsx src/keys.test.ts && node .preview/prove-repaint.mjs"
   },
   "dependencies": {},
   "devDependencies": {
