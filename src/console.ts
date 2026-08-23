@@ -1,6 +1,6 @@
 import {paint, screenSize} from './screen.js';
-import {INVERSE, RESET, colour, paint as tint, visibleWidth} from './style.js';
-import {cell, fit, labelled, wrap} from './text.js';
+import {INVERSE, RESET, colour, paint as tint} from './style.js';
+import {cell, fit, fitStyled, labelled, wrap} from './text.js';
 import {START, reflow, scroll, windowOnto, type ScrollCommand, type Viewport} from './viewport.js';
 
 // The console: state in, one frame out.
@@ -115,7 +115,7 @@ function footerRows(state: State, width: number, above: number, below: number): 
       ? `${below} row${below === 1 ? '' : 's'} below · PgDn follows again · Ctrl+C quit`
       : 'PgUp/PgDn scroll · Home/End jump · Enter sends · Ctrl+C quit';
 
-  return [fit(line, width + (line.length - visibleWidth(line))), tint('  ' + fit(keys, width - 2), colour.dim)];
+  return [fitStyled(line, width), tint('  ' + fit(keys, width - 2), colour.dim)];
 }
 
 /**
