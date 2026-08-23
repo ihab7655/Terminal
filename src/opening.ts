@@ -1,7 +1,8 @@
 import {blockTextWidth, GLYPH_HEIGHT, renderBlockText} from './art/blockFont.js';
 import {dragonCrossArt} from './art/dragonCrossArt.js';
 import {skyAt, skyRow} from './art/sky.js';
-import {BOLD, RESET, colour} from './style.js';
+import {centred, makeGrid, put, render, type Cell} from './cells.js';
+import {colour} from './style.js';
 
 // ── The opening ──────────────────────────────────────────────────────────────
 //
@@ -98,7 +99,6 @@ const fadeStep = (since: number, r: readonly string[]) =>
 const GREETING_RAMP = [colour.dim, colour.muted, colour.cyanSoft] as const;
 const TAGLINE_RAMP = [colour.dim, colour.amberDim, colour.amber] as const;
 
-type Cell = {ch: string; colour: string; bold: boolean};
 type Rect = {top: number; left: number; height: number; width: number};
 
 const QUIET_RADIUS = 2;
@@ -132,17 +132,6 @@ function quietFalloff(rects: readonly Rect[], row: number, column: number) {
   return t * t * (3 - 2 * t);
 }
 
-/** Draw text into the grid. Spaces stay transparent so the sky shows through. */
-function put(grid: Cell[][], top: number, left: number, text: string, c: string, bold = false) {
-  const line = grid[top];
-  if (!line) return;
-  [...text].forEach((ch, i) => {
-    const column = left + i;
-    if (ch === ' ' || column < 0 || column >= line.length) return;
-    line[column] = {ch, colour: c, bold};
-  });
-}
-
 // Braille blank is U+2800, so anything above it is an inked cell. The scatter
 // is re-rolled every tick, which is what makes the dragon shimmer as it lands
 // rather than wipe on. This is the assembly the console has always had.
@@ -153,25 +142,6 @@ function scatter(line: string, row: number, progress: number, tick: number) {
       return hash(row, column, tick) <= progress ? cell : ' ';
     })
     .join('');
-}
-
-/** One row of cells as a string, opening a colour only where it changes. */
-function render(row: readonly Cell[]): string {
-  let out = '';
-  let open = '';
-  let end = row.length;
-  while (end > 0 && row[end - 1]!.ch === ' ') end--;
-  for (let x = 0; x < end; x++) {
-    const cell = row[x]!;
-    const want = cell.ch === ' ' ? '' : (cell.bold ? BOLD : '') + cell.colour;
-    if (want !== open) {
-      if (open !== '') out += RESET;
-      out += want;
-      open = want;
-    }
-    out += cell.ch;
-  }
-  return open === '' ? out : out + RESET;
 }
 
 /**
@@ -185,9 +155,7 @@ function render(row: readonly Cell[]): string {
  */
 export function openingRows(tick: number, columns: number, rows: number): string[] {
   const width = Math.max(20, columns);
-  const grid: Cell[][] = Array.from({length: rows}, () =>
-    Array.from({length: width}, () => ({ch: ' ', colour: '', bold: false}))
-  );
+  const grid: Cell[][] = makeGrid(width, rows);
 
   const phase = phaseAt(tick);
   const blockName = blockTextWidth(NAME) + 2 <= width;
