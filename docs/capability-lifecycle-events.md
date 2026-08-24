@@ -192,19 +192,110 @@ that it is a **restart**, not a resume.
 
 ---
 
+## 4. The final table: every real event, its owner, and the fields present at it
+
+**Both levels use the existing bus.** `execution-event-stream.ts` already merges
+two buses and holds no table of event names, so a new name flows into
+`ExecutionEvent` with no edit outside its owner. A third bus would buy nothing.
+
+**Every level-2 occurrence carries `needId`.** It is in hand: `gap.id` is the
+same value `resolution-orchestrator.ts:70` moves through the ledger. Without it
+the two levels are two parallel streams; with it a consumer nests the attempts
+under the state they belong to. `gap.id` is optional in the type — an attempt
+for a gap with no id carries none, and a consumer must tolerate that rather than
+assume it.
+
+### Level 1 — one owner, one funnel
+
+| | |
+|---|---|
+| **owner** | `NeedLedger.moveTo` — `engine-core/src/needs/need-ledger.ts:86` |
+| **when** | after the legality check and the storage write, on a transition that actually occurred. `moveTo` returns `false` and writes nothing for an illegal or a no-op transition; neither is an occurrence |
+| **fields in hand** | `needId`; `from` = `current.state`; `to`; `detail.metBy?`; `detail.cause?` — and, from the `NeedRecord` it already loaded at `:90`: `goalId`, `originGoalId`, `text` (immutable), `reason?`, `evidence[]` |
+
+`text` is the field that makes this legible to a person: the need in the words it
+was captured in. Nothing has to be looked up to render a level-1 event.
+
+### Level 2 — inside `ACQUIRING`, all in `resolution-orchestrator.ts`
+
+| # | occurrence | line | fields present at that point |
+|---|---|---|---|
+| 1 | a strategy is selected | `:141` | `resolver.id`, `gap.id?`, `gap.capability`, `canonicalId?` |
+| 2 | an attempt starts | `:159` | as above, plus `attemptsThisResolver`, `priorAttempts[]` (`{summary, reason}`), `workspaceDir?` |
+| 3 | the attempt returned | `:178` | `ResolverOutcome`: `resolved` → `tools[]`, `goalId?`; `failed` → `reason`, `goalId?`; `declined` → nothing; `awaiting_permission` → `decision`, `artifacts?` |
+| 4 | a candidate was judged | `:208` | `{adopt: true, persisted?}` or `{adopt: false, reason}` |
+| 5 | adoption returned | `:213` | `AdoptionOutcome`: `adopted`, `reason?`, `alreadyPresent?`, `registeredAs?` |
+| 6 | a rejection was recorded | `:266` | `reason` (immediately), `statedCause`; `failureAnalysis` `{category, rootCauses[]}` **only after an LLM review** |
+| 7 | the budget is spent | `:303` | `attemptsThisResolver`, `budget` |
+| 8 | a reason repeated | `:313` | the repeated `verdict.reason` |
+
+Two things this table settles. `goalId` on 3 is what joins an attempt's cost to
+`llm_calls`, and it is **absent for a resolver that runs no goal** — an installed
+pack. And 6 is the only point whose full payload is not available synchronously.
+
+## 5. The smallest set that makes the story visible
+
+Not eight events. Most of the table is either already carried by another event or
+is an internal step with no consequence a reader can act on.
+
+**Two events.**
+
+### `need.transition` — level 1, published by `NeedLedger.moveTo`
+
+Carries `{needId, from, to, text, goalId, originGoalId, metBy?, cause?}`.
+
+Nine states, so at most nine kinds of statement, and it alone answers *what
+happened to my task*: the gap was found (`UNRESOLVED`), the engine started trying
+(`ACQUIRING`), it worked or it did not (`ACQUIRED` / `ABANDONED`, with `cause`),
+the task resumed (`MET`), the capability was used (`CONSUMED`).
+
+Adoption needs no event of its own: `ACQUIRED` is that fact, and `metBy` is the
+tool. Abandonment needs no reason event: `cause` is already the reason, and rows
+7 and 8 are what set it.
+
+### `capability.attempt` — level 2, published in `resolution-orchestrator.ts`
+
+Carries `{needId?, capability, resolverId, attempt, phase, reason?, toolName?}`,
+with `phase` one of `started` (row 2) and `settled` (rows 3 and 5 collapsed).
+
+One event with a phase rather than two names, following the precedent the engine
+already set for `capability.evolution` and its stated reason
+(`event-bus.service.ts:23`): *"a host that renders 'starting' without rendering
+how it ended has misinformed the user. Separate names make that partial
+subscription the easy mistake."*
+
+`settled` carries what happened in one field, from the values already in hand at
+`:178` and `:213`: adopted, already-present, rejected, declined, or
+awaiting-permission — the same distinctions the lifecycle log already draws, so
+nothing new is named.
+
+### What is deliberately left out, and why
+
+| left out | why |
+|---|---|
+| strategy selected (1) | `resolverId` is on every attempt. A separate event says only that a loop iterated |
+| candidate judged (4) | its outcome is the `settled` reason. A validation that passes has no consequence a reader can act on |
+| budget spent (7), reason repeated (8) | both are why acquisition ended, and that is `ABANDONED.cause` |
+| `failureAnalysis` | it lands after an LLM review. The rejection is already published with `reason`; the analysis is a later detail against the same attempt, and `capability_attempts` already stores it |
+
+Two events, one of them phased. Everything a reader needs to follow the story —
+gap found, strategy tried, attempt failed and why, next attempt, adopted or
+given up, task resumed — and no internal line turned into an event.
+
 ## 4. What is decided and what is not
 
 Decided by the record: the live stream is driven by the state machine, not by
 `capability_attempts`; and the two levels are distinct, because `moveTo` alone
 cannot narrate a state that lasts minutes.
 
-Not decided here, and needing a deliberate choice before any code:
+Decided in §4 and §5: the existing bus for both levels; `needId` on every
+level-2 occurrence; and two events, `need.transition` and `capability.attempt`.
 
-- whether level 2 publishes on the existing bus alongside level 1, or is a
-  separate concern with its own owner;
-- whether a level-2 occurrence carries the `needId` (it is available: `gap.id`
-  is what `resolution-orchestrator.ts:70` moves), which is what would let a
-  consumer nest the attempts under the state they belong to.
+Not decided, and the only thing left before code:
+
+- `gap.id` is optional, so some attempts will carry no `needId` and cannot be
+  nested. Whether that is acceptable, or whether the gap should be given an id
+  earlier, is a question about the resolution path and not about events.
 
 `observability/execution-event-stream.ts:23` records the mechanism either way:
 *"A new event is a new EVENTS entry plus a publish at its owner — this file is
