@@ -6,6 +6,123 @@ cites it or the source directly; nothing is assumed.
 
 ---
 
+# Part 0 — Derivation, and the public-fact filter
+
+**Why this part exists.** An earlier version of §1.3 listed events derived from
+lines of console output we wanted. That inverts the constitution's General
+Engine First: *"Every architectural decision is judged first on whether it
+generalizes — never on whether it resolves the case in front of you."* The list
+below is re-derived by asking each component one question — **what fact does it
+settle, and who owns it?** — with no interface named. Then a second filter is
+applied, because a settled fact is not automatically a public event.
+
+## 0.1 The six settled facts
+
+| # | fact settled | owner | site |
+|---|---|---|---|
+| F1 | the Need moved from one state to another | `NeedLedger` — sole owner of all nine | `need-ledger.ts:86` |
+| F2 | an acquisition attempt began, under a strategy | `ResolutionOrchestrator` — it decides the sequence | `:159` |
+| F3 | the resolver produced a candidate / failed / declined | the resolver; the orchestrator relays | `:178` |
+| F4 | the candidate passed or failed acceptance and validation, and why | `_validateBeforeAdoption` | `:208` |
+| F5 | the capability was registered / was already present / was refused | `Adoption` | `:213` |
+| F6 | effort on this strategy ended, and why | `ResolutionOrchestrator` | `:303`, `:313` |
+
+**What the re-derivation already caught.** The earlier list had one phase called
+`judged` covering both F4 and F5. They have **different owners**, and the engine
+itself names three outcomes at F5 and says so: *"Three outcomes, recorded as
+three. 'Already present' is not a rejection"* (`capability-lifecycle.ts:230`).
+A single phase would have shipped that conflation.
+
+## 0.2 The filter
+
+A settled fact becomes a public event only if it passes all four:
+
+1. must it be announced **outside** the component that settled it?
+2. does it have a **stable, self-contained meaning**?
+3. can another consumer use it **without knowing implementation detail**?
+4. **would it survive if Console, Web and the SDK were all deleted?**
+
+| fact | 1 | 2 | 3 | 4 | verdict |
+|---|:-:|:-:|:-:|:-:|---|
+| F1 transition | ✓ | ✓ | ✓ | ✓ | **PUBLIC** |
+| F2 attempt began | ✓ | ✓ | ✓ | ✓ | **PUBLIC** |
+| F3 resolver outcome | ✗ | ✗ | ✗ | ✗ | internal |
+| F4 validation verdict | ✗ | ✓ | ✗ | ✗ | internal |
+| F5 adoption outcome | ✓ | ✓ | ✓ | ✓ | **public — carried by F2's ending** |
+| F6 strategy exhausted | ✗ | ✓ | ✗ | ✗ | internal |
+
+**F1 passes on the documents.** The nine states are a declared contract
+(`05-state-machines.md` §1), stored in `needs`, and the transition names no
+resolver and no strategy. Without any interface it still serves an acceptance
+test, an investigation and a restart.
+
+**F2 passes on the engine's own precedent.** `capability-evolution-notification.ts:26`
+keeps a `started` phase for a stated reason — *"This is the one that explains an
+unexpected pause and unexpected token spend"* — and that reason holds with every
+interface deleted: without a beginning, no consumer can measure a duration or
+know the engine is busy.
+
+**F3 fails on 3.** `ResolverOutcome` is not exported from `official-runtime`'s
+public surface; its vocabulary (`resolved` / `declined` / `awaiting_permission`)
+is the resolver contract's, not the engine's. And its meaning is incomplete — a
+candidate was produced, with its fate unknown. What a consumer needs is the
+attempt's *ending*, which F5 gives.
+
+**F4 fails on 1 and 3.** `_validateBeforeAdoption` is private, and the
+orchestrator states it owns no validation logic: *"the orchestrator is a CLIENT
+of the Lab"* (`:195`). A client relaying a verdict is not the owner of the fact,
+and the verdict is consumed immediately by the adoption decision. Its **reason**
+survives — as a field on the attempt's ending, which is where a consumer needs
+it — but the verdict is not an event.
+
+*This is the one the earlier list had wrongly promoted, and it is the strongest
+evidence the filter earns its place.*
+
+**F6 fails on 3.** Budget-spent versus reason-repeated is the loop's own
+governance. A consumer needs *the capability was not acquired, and why* — which
+is `ABANDONED.cause`. That `cause` does not currently carry it (`:78` writes the
+last rejection's reason or a generic sentence) is a **defect in the cause**, to
+be fixed where the cause is written — not a new event.
+
+## 0.3 Result: two public events, one deferred candidate
+
+**`need.transition`** (F1) and **`capability.attempt`** (F2 + F5 as its ending).
+
+F5 is carried rather than separate because `ACQUIRED` already announces that the
+need was satisfied and the attempt's ending already names the tool; a third event
+would publish one fact twice.
+
+**Deferred candidate — `capability.registry.changed`.** "The tool registry now
+holds something it did not" is genuinely independent of any need: it is also true
+on the evolution path, and a consumer maintaining a tool list would want it
+without caring about needs. It is deferred rather than rejected because adopting
+it widens the scope to the repair path, and that is a separate decision.
+
+## 0.4 The general layer, and what it is not
+
+```
+ENGINE  ──facts + typed contracts──►  ExecutionEventStream
+                                              │
+                        ┌─────────────────────┼─────────────────────┐
+                        ▼                     ▼                     ▼
+                     Console                 Web                   SDK
+                   own wording          own wording           own usage
+```
+
+Shared: the fact, the event name, the contract, the meaning of each field.
+**Not shared: the wording.** "Attempt 1 failed because validation failed" is a
+consumer's reading, not the engine's fact, and `HANDOFF.md` records that a shared
+presentation layer was already rejected for exactly this — `ExecutionView` mixed
+engine truth with English phrasing.
+
+So the general layer is not a package. It is the exported contract plus one
+publish helper per event, following `publishCapabilityEvolution`'s stated reason:
+*"One publish site for all five phases, so the event name and payload shape
+cannot drift between the two packages that emit them."* That also answers the
+multiple-owner problem: several sites publish, one function fixes the shape.
+
+---
+
 # Part 1 — The plan
 
 ## 1.1 What already exists and is reused unchanged
@@ -31,15 +148,25 @@ emitting nothing.
 
 ## 1.3 What changes, exactly
 
-Three files. Two `EVENTS` entries. Three publish sites. No new component, no new
-state, no new record, no signature change.
+**Four files**, not three — an earlier count omitted the wiring line. Two
+`EVENTS` entries, two events, no new component, no new state, no new record, no
+signature change.
 
 1. `engine-core/src/services/event-bus.service.ts` — `NEED_TRANSITION` and
    `CAPABILITY_ATTEMPT` added to `EVENTS`.
-2. `engine-core/src/needs/need-ledger.ts` — one publish inside `moveTo`, after
-   `updateNeedState`.
-3. `official-runtime/src/resolution-orchestrator.ts` — two publishes, `started`
-   before `resolver.attempt` and `settled` after the outcome is known.
+2. `engine-core/src/needs/need-ledger.ts` — an optional `eventBus`, and one
+   publish inside `moveTo` after `updateNeedState`.
+3. `engine-core/src/composition/coordinator-factory.ts:163` — pass the existing
+   `eventBus` into `new NeedLedger(storage)`.
+4. `official-runtime/src/resolution-orchestrator.ts` — `started` before
+   `resolver.attempt`, and `settled` at every ending of an attempt.
+
+**Open design point for §2.4.** `settled` must fire on every exit of the attempt
+loop, and the loop has several. Publishing inside branches is what
+`resolution-orchestrator.ts:170` warns against — the `generated` record once
+lived inside the `resolved` branch and an attempt that failed the shape guard
+left nothing at all. Either one publish point covering all endings, or a single
+helper called from each, with a test that no exit can omit it.
 
 ## 1.4 What is deliberately not touched
 
@@ -176,10 +303,15 @@ export interface CapabilityAttemptNotification {
   readonly resolverId: string
   readonly attempt: number         // 1-based; attemptsThisResolver + 1
   readonly phase: 'started' | 'settled'
-  // `settled` only. Values drawn from what is already in hand at :178/:213 —
-  // no new vocabulary is introduced.
+  // `settled` only, and it is F5 — the adoption outcome — not F3. The engine
+  // names three at :230 and this keeps all three distinct. `declined` is the
+  // resolver never producing a candidate; it is included because without it a
+  // consumer would have to infer "the catalog did not match" from the absence
+  // of anything between two `started` events.
   readonly outcome?: 'adopted' | 'already_present' | 'rejected' | 'declined' | 'awaiting_permission'
-  readonly reason?: string         // ResolverOutcome.reason | verdict.reason | AdoptionOutcome.reason
+  // The verdict's reason (F4) travels here rather than as its own event: the
+  // reason is what a consumer needs, the verdict is not a public fact.
+  readonly reason?: string
   readonly toolName?: string       // AdoptionOutcome.registeredAs ?? the candidate's name
   // The internal sub-goal that produced the candidate, when one ran. Absent for
   // a resolver that runs no goal (an installed pack) — types.ts:100.
