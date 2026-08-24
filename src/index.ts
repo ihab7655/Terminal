@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import {draw, emptyState, spinnerFrame, scrollBy, type Block, type State} from './console.js';
+import {draw, emptyState, scrollBy, type State} from './console.js';
 import {onKey, type Key} from './keys.js';
 import {advance, openingRows, skipOpening, startOpening, TICK_MS, type Opening} from './opening.js';
 import {paint, releaseScreen, screenSize, takeScreen} from './screen.js';
@@ -79,15 +79,24 @@ function key(k: Key) {
           ? s
           : {...s, input: s.input.slice(0, s.caret - 1) + s.input.slice(s.caret), caret: s.caret - 1}
       );
+    case 'tab':
+      // One switch for all captured output. Folding one call at a time would
+      // need a selection — a cursor, keys to move it, a rendered highlight —
+      // and that is a layer this does not have yet.
+      return edit(s => ({...s, open: !s.open}));
     case 'enter':
       return edit(s => {
-        const said = s.input.trim();
-        if (said === '') return s;
-        const block: Block = {id: `you-${s.blocks.length}`, tone: 'user', label: 'YOU', text: said};
-        // Scrolling to the end on a new block is the console following the
+        const text = s.input.trim();
+        if (text === '') return s;
+        // Scrolling to the end on new content is the console following the
         // conversation. A reader who had scrolled back keeps their place —
         // `following` is what decides, and it is the viewport's to decide.
-        return {...s, blocks: [...s.blocks, block], input: '', caret: 0};
+        return {
+          ...s,
+          items: [...s.items, {kind: 'said', id: `said-${s.items.length}`, text}],
+          input: '',
+          caret: 0
+        };
       });
     default:
       break;
@@ -106,6 +115,13 @@ function key(k: Key) {
 // opening too, which is why it holds no measurement of its own.
 const onResize = () => show();
 
+// A recorded session, only when asked for. Nothing imports demo.ts otherwise.
+if (process.env['DEMO']) {
+  void import('./demo.js').then(({playDemo}) =>
+    playDemo(change => edit(s => ({...s, items: change(s.items)})))
+  );
+}
+
 takeScreen();
 const stop = onKey(key);
 process.stdout.on('resize', onResize);
@@ -121,9 +137,13 @@ const curtain = setInterval(() => {
 }, TICK_MS);
 curtain.unref();
 
+// The spinner turns only while something is genuinely in flight, and stops the
+// moment nothing is. A console that repaints on a timer burns a terminal's
+// night for no reason.
 const spin = setInterval(() => {
-  if (!opening.done || !state.live) return;
-  edit(s => ({...s, spinner: s.spinner + 1, live: {...s.live!, mark: spinnerFrame(s.spinner + 1)}}));
+  if (!opening.done) return;
+  if (!state.items.some(i => i.kind === 'did' && i.state === 'running')) return;
+  edit(s => ({...s, spinner: s.spinner + 1}));
 }, 90);
 spin.unref();
 
