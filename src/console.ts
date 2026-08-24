@@ -52,9 +52,6 @@ const TONE: Record<Tone, string> = {
   event: colour.muted
 };
 
-const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-export const spinnerFrame = (n: number) => SPINNER[n % SPINNER.length]!;
-
 // The house indent, a two character mark and a space, and a name.
 const INDENT = 2;
 const MARK = 3;
