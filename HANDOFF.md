@@ -2,122 +2,83 @@
 
 ## The console
 
-Owns the screen. Four rules in `ARCHITECTURE.md`; the third — **scroll, never
-shed** — is the one the previous project broke and the one every layout choice
-still answers to. 77 tests. `npm run dev` to use it, `.preview/use-it.sh` to
-drive it in a pty and `.preview/verdict.mjs` to judge the recording.
+Owns the screen. **Five** rules in `ARCHITECTURE.md`. Rule 3 — scroll, never
+shed — is the one the project before this broke. Rule 5 — the content decides
+the layout — is the one this project broke, and it is why the last two days
+were thrown away. Read both before adding anything.
+
+`npm run dev` to use it, `npm test` for the four checks, `.preview/use-it.sh`
+to drive it in a pty and `.preview/verdict.mjs` to judge the recording.
 
 Working: the opening (dragon, sky, greeting, name), the scrollable console,
-resize, `fitStyled`, the cell compositor in `cells.ts`.
+resize, `fitStyled`, the cell compositor in `cells.ts`. Nothing is dead: every
+file under `src/` has a live consumer.
+
+## What was deleted, and why it matters more than what was built
+
+A second screen — ENGINE DIAGNOSTICS — was built, wired to the real engine,
+rebuilt on a reference sheet, and deleted. So was the Tech HUD as a design
+language. Six files went with them: `diagnostics.ts`, `telemetry.ts`,
+`art/gauges.ts`, `art/core.ts`, `art/emblemFrames.ts`, `engine.ts`. They are in
+git at `ddc0344` if any of it is ever wanted literally.
+
+The reasons, because they are the only thing worth carrying forward:
+
+  * **It was a barrier in front of a goal nobody had typed yet.** Nine seconds
+    of opening, then a screen asking for a keypress before the user reaches the
+    thing they opened the terminal for.
+  * **No decision rested on its numbers.** "66.9% tool success" at the moment a
+    terminal opens changes nothing anyone does next — and they were frozen
+    readings from 19 August, one of which (`21 registered`) was already known
+    to be false.
+  * **The tell was in the work itself.** Two days on the shape of a circle,
+    none on what the circle was for. When all of the argument is about how a
+    thing looks and none of it is about what it does, it is ornament looking
+    for a justification.
+  * **It was dragging the project back into fixed geometry** — widths, heights,
+    left edges, sections dropped at small sizes — which is the exact thing the
+    console renderer exists to escape. That is now rule 5.
+
+Kept from it: nothing in code. Kept as knowledge: braille is wrong for a curve
+(2×4 sub-dots scatter a stroke into specks); half blocks double the vertical
+resolution and are the only way a circle curves in a terminal; a value drawn on
+a static readout must not carry a moving "head", because a head claims an
+advance that is not happening.
 
 ## The engine
 
-`src/engine.ts` — and now `src/booting.ts` draws it. Five real checks with real
-elapsed times: CONFIG, ENGINE, STORAGE, TOOLS, EVENT STREAM.
+**Not connected, deliberately.** The console does not import it, does not boot
+it and does not read it. It was connected once and that was building a machine
+behind a picture nobody had agreed on.
 
-Measured, not assumed:
+Measured while it was connected, so it does not have to be re-measured:
 
-  * the engine boots from the terminal in ~1.3s with no LLM call
-  * it reports 11 tools and 6 categories
-  * **the store now refuses** — `the store reported that it is not ready`,
-    every run on 2026-08-24. It was ready when this file was first written, so
-    something outside this project changed. The screen reports it correctly;
-    nothing here is broken by it.
-  * the old frozen telemetry said 21 tools — it was already lying
-  * the engine prints to stdout; both streams are captured before the import,
-    so nothing reaches the screen we own. Proved: nothing leaked.
+  * boots from the terminal in ~1.3s with no LLM call
+  * reports 11 tools and 6 categories — the old frozen telemetry said 21
+  * **the store refuses** as of 2026-08-24: `the store reported that it is not
+    ready`. Something outside this project changed.
+  * it prints to stdout, and anything that captures those streams must not
+    capture the console's own frames with them — that happened, and three boot
+    frames out of forty-one reached the screen. If the engine is ever wired in,
+    `screen.ts` has to hold its own `process.stdout.write`, taken at load.
 
-Loaded by path (`ENGINE_PATH`), not as a dependency. The project stays at zero.
+## The direction
 
-## The second screen — built and looked at
+Not "how do we make it look like a spaceship" but **"how do we make using the
+engine feel extraordinary"**. The identity comes from typography, spacing,
+hierarchy, colour, how events arrive, live execution, how detail folds and
+unfolds, small transitions — and ASCII/Unicode where it earns its place. Not
+from turning every message into a panel.
 
-`src/booting.ts`. A third state of the same loop, after the opening and before
-the console: `show()` picks the rows, there is no handover. It draws what
-`bootEngine` has FOUND and nothing else — a check that has not run carries no
-time and no claim, and the only things that move are the spinner beside the one
-check in flight and the grain behind it.
-
-Settled by drawing it and looking, not by reasoning:
-
-  * the grain keeps out of every ROW the readout occupies, not just its
-    rectangle — clearing the rectangle put dust on both ends of a line being
-    read
-  * a failure hangs under the NAME and wraps, never in the detail column: at a
-    narrow window that column was nine characters and tore the error into
-    slivers
-  * a window too short for the whole readout drops to the FAILURE, not to the
-    gauge — "3 / 5" and nothing about the check that refused is the screen
-    withholding the one fact it exists for
-  * both instruments count what PASSED, not what settled. A failure settles
-    too, so the dial read "5 / 5" in the same picture as "the engine did not
-    wake"
-  * a stalled gauge is red. The count is the truth; the colour is what stops it
-    being misread
-  * the boot clock stops when a failure settles — grain drifting over a refused
-    connection suggests something is still being tried
-
-The engine is asked to wake AFTER the opening. It answers in about a second and
-a half, so starting it behind the opening would show a screen with every check
-already green — a reported wait nobody had. `startBoot()` moves up to
-`takeScreen()` for the other answer; nothing else changes. **That is open
-question 2, answered provisionally by which one is worth looking at.**
-
-`.preview/boot.mjs` draws every state at every size. `.preview/see-boot.sh` +
-`.preview/frames.mjs` run the real thing in a pty and replay what landed.
-
-## The instruments
-
-Rebuilt on the reference sheet the owner chose — the 76%/89% bar and the 36/67
-dial (`.preview/gauges.mjs` shows both alone).
-
-  * **The bar is a gradient, not a fill.** Lit segments run in three graded
-    bands with a bright head and cut caps (`▞ … ▚`). A cell can only be one
-    colour, so the gradient IS the segments: it is what makes a row of
-    identical marks read as a swept instrument.
-  * **The dial is ticks, not an arc.** Separate radial strokes on two radii.
-    It had to grow to 23×11 — at 17×8 the circumference gave each tick three
-    dots and no room for the gap, and it read as a solid ring, which is the one
-    thing the sheet's dial is not. The size is what the form costs.
-  * Neither knows a colour. They name their parts; the screen decides.
-  * **A screen never carries both.** The sheet pairs them because they read
-    different quantities; here there is one — how much of the boot is done —
-    and drawing it twice is the clutter. Wide enough (88 columns) the dial
-    replaces the bar and the title, carrying the count with the state under it.
-  * `segments()` is gone, replaced by `bar()`. `meter()` and `graduation()`
-    have never had a consumer — left alone, not defended.
-
-## The visual identity — decided, not built
-
-**Tech HUD, and it is the content's display language, not decoration around
-it.** Seven primitives, one per content type: Input Bracket, Process Track,
-Operation Module, Completion Mark, Alert Module, Data Channel, Indicator.
-
-The rule that makes it compatible with rule 3:
-
-> **No primitive may close on the right.** Everything anchors left. Horizontal
-> rules may extend; nothing encloses. An open bracket needs no width
-> arithmetic on its right edge and stacks without limit, which is why the
-> conversation can scroll through it. A box cannot hold 400 rows.
-
-Loud at boot, quiet in the console: scan lines and glow belong to the eight
-second screen, not the one someone sits in for an hour.
-
-Bars: the segmented `▰▱` readout in `art/gauges.ts`, never solid `█`. Lit in
-cyan, head in ink, unlit in dim — the colours stop the smear more than the
-glyph does.
+That is not a plain CLI. It is a console with a strong character built on
+content and flow rather than on decoration that needs arithmetic.
 
 ## Open
 
-  1. `╲` `╱` — still a font question. The bar's caps use `▞` `▚` instead,
-     which are block elements and safe, so nothing is blocked on it; the cut
-     corner has not entered the language, it has been approximated.
-  2. **Answered provisionally**: after the opening. See above.
-  3. The seven primitives and their gallery — not started. The owner paused it:
-     the design had got dense, and the welcome screens come first.
-  4. The boot screen holds on a failure until a key is pressed, then hands the
-     console one ENGINE block with each check's finding. What the engine
-     PRINTED (`facts.captured`) is still dropped — HANDOFF says that becomes
-     console content, and nothing consumes it yet.
+  1. Build the console renderer and the real console. Look at actual use before
+     deciding it needs a visual identity; if it does, add it on top of a
+     correct system rather than drawing a spaceship and wedging the engine in.
+  2. `╲` `╱` was a font question and is now moot — nothing needs a cut corner.
 
 ## Not ours
 

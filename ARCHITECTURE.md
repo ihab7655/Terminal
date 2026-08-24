@@ -71,6 +71,28 @@ away, not content scrolled past. **None of those may come back under any name.**
 frame at the new size. Never try to reconcile what is already on screen with a
 new width.
 
+**5 — The content decides the layout, never the layout the content.**
+Say what to show. The renderer measures the space, wraps the text, orders the
+rows and repaints. Do not say where to put it.
+
+This is the rule the HUD broke, and it broke it a piece at a time: a bar of a
+fixed width, a dial of a fixed size, a block centred on a computed left edge, a
+section dropped when the window came up short. Each of those is an arithmetic
+that has to be re-derived at every size, and the sizes are unbounded — so a
+screen built that way does not survive a resize, it survives the resizes
+someone thought of. Two days went into the shape of a circle and none into what
+the circle was for.
+
+Rules 3 and 4 are only affordable underneath this one. Scrolling instead of
+shedding works because rows are produced from content at the current width;
+a resize is a repaint rather than an adjustment for exactly the same reason.
+Fixed geometry takes both back, because fixed geometry is the thing that then
+has to be reconciled.
+
+Ornament is not banned — `cells.ts` and the opening are ornament, and they earn
+it by being ONE drawing that is centred and otherwise left alone. What is
+banned is ornament that other content has to be positioned around.
+
 ## What this costs, stated plainly
 
 Owning the screen means the terminal's own scrolling, selection, search and
