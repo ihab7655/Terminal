@@ -119,19 +119,54 @@ cast.
    `KnownExecutionEvent` with zero casts. (The Terminal console proves this
    without being wired to the engine at runtime.)
 
-## 6. Anything UNVERIFIED
+## 6. Step 0 — done. All five now VERIFIED
 
-**`UNVERIFIED`: the exact shapes of five payloads** — `worker.done` (`:257`),
-`execution.wave.started` (`:109`), `execution.wave.finished` (`:242`),
-`planning.finished` (`:668`), `completion.finished` (`:251`). Each was read from
-an excerpt showing its first fields and a trailing `…`, not brace to brace.
+Each read from the opening brace of the emitted object to its closing brace, and
+every publish site of each event counted.
 
-Per §4 this **blocks implementation of those five until read in full**. It does
-not block the other 21. The five are read first, as step 0.
+| event | payload, complete | sites |
+|---|---|---|
+| `worker.done` | `{goalId, wave, workerIndex, workerId, success}` | 1 |
+| `execution.wave.started` | `{waveIndex, workersCount, attempt}` | 1 |
+| `execution.wave.finished` | `{waveIndex, success, toolCallsCount, tokenCost, attempt}` | 1 |
+| `planning.finished` | `{attempt, wavesCount, finishedAt, startedAt}` | 1 |
+| `completion.finished` | see below | **3** |
+
+### What step 0 found
+
+**`completion.finished` has three emit sites and two shapes.**
+
+- `:114` — `{success: true, durationMs, attempts, terminal: true}`
+- `:176` — `{success: false, durationMs, attempts, terminal: true}`
+- `:254` — `{success, durationMs, attempts, status, reason, terminal: true}`
+
+So `status` and `reason` arrive from one site of three. The type declares them
+**optional** — which is a declaration of what is published, not a unification of
+two shapes into an invented one. This is the case the audit was watching for,
+and it was found only by counting sites rather than reading one.
+
+**`terminal` is a payload field, lifted by the stream.**
+`execution-event-stream.ts` reads `fields['terminal'] === true` to set
+`ExecutionEvent.terminal`. It is part of `completion.finished`'s contract, not
+something the envelope invents — and the LLD's "not a list of event names" claim
+about `terminal` is what this implements. It must appear in the declared type.
+
+**A miscount, corrected before it mattered.** A first pass reported
+`TOOL_CALLED` with three publish sites. Two are comments that mention it
+(`worker-context.ts:116`, `worker-factory.ts:69`); there is one real publisher.
+Counting with grep counts prose.
+
+### Effect on the plan
+
+**File count unchanged: 15.** All five belong to files already listed (3, 4, 6).
+
+**One declaration changes:** `CompletionFinishedPayload` carries
+`status?: string`, `reason?: string` and `terminal: true`.
+
+**No UNVERIFIED premise remains.** §4's block is lifted.
 
 ## 7. Order
 
-0. Read the five UNVERIFIED payload sites brace to brace.
 1. Declare the 22 missing types at their owners (files 1–12).
 2. Add `observability/events/` and the union (13), export it (14).
 3. Remove the cast in `cli-execution-view.ts` (15) — the phase ends here.
