@@ -114,59 +114,70 @@ So the split is **25 mechanical, 1 decision** — not 23 and 3.
 
 # Decision report — `tool.called` and the storage alias
 
-## The problem
+**Outcome: keep the alias. Export it unchanged. The earlier recommendation in
+this document is withdrawn.**
 
-`ToolCalledEventPayload = Omit<ToolCallRecord, 'id' | 'createdAt'>`
-(`workers/tool-caller.ts:31`), where `ToolCallRecord` is a persistence interface
-in `core/interfaces/istorage.ts`. Exporting it as-is makes a database row shape
-the engine's public event contract.
+## Why the design exists — traced, not guessed
 
-## The reality, measured
+The alias was created in `0a3fda6`, *"LLD-1 — Execution Observability (real
+tool_calls persistence)"*. Its own commit body states the intent:
 
-- `ToolCallRecord` **is already exported** — `engine-core/src/index.ts:404`. The
-  storage model is on the public surface today; this is not a boundary about to
-  be crossed, it is one already crossed.
-- **Three internal subscribers already depend on the alias**:
-  `observability/tool-call-recorder.ts:14`, `needs/need-consumption-recorder.ts:31`,
-  `tools/investigation/tool-call-failure-trigger.ts:62`. It is a working contract,
-  not a dormant one.
-- The published object matches the type field for field — verified at `:246`.
-- **`createdAt` does not exist on `ToolCallRecord`.** The `Omit` removes a key
-  that is not there. Harmless, and evidence the alias has already drifted once
-  from the record it tracks.
+> "A new `observability/tool-call-recorder.ts` subscriber **bridges
+> EVENTS.TOOL_CALLED to persistence**"
 
-## The alternatives
+And the bridge is one line (`tool-call-recorder.ts:21`):
 
-| | what it does | effect |
-|---|---|---|
-| **A. Export the alias unchanged** | one line | zero risk, zero work. Freezes "the event is the row" as the public contract, and a future storage migration silently changes what consumers are promised |
-| **B. Declare an independent interface with the same fields** | ~15 lines | the event contract becomes its own thing. TypeScript is structural, so the three existing subscribers and every future consumer are unaffected — **this is not a breaking change**. Cost: two shapes that must stay in step |
-| **C. B, plus a type-level test asserting the two remain assignable** | B + one test | keeps the independence and makes the drift impossible to ship silently. The stale `createdAt` shows drift is not hypothetical |
+```ts
+storage.saveToolCall({ ...payload, id: randomUUID(), createdAt: Date.now() })
+```
 
-## Recommendation — C
+**The payload IS the row**, minus the two keys the subscriber mints. So
+`Omit<ToolCallRecord, 'id' | 'createdAt'>` is not a borrowed shape — it is an
+exact statement of that relationship, enforced by the compiler.
 
-The event and the row answer different questions and already disagree by one
-key. B alone replaces a coupling with a duplication; the test is what makes the
-duplication safe, and it fails loudly the day storage changes.
+## Two claims from the earlier draft, both withdrawn
 
-It also stays inside this stage's rule. **No runtime value changes**: the same
-object is published, the same fields arrive, no publish moves, no behaviour
-differs. Only a type declaration and a test are added.
+**"`createdAt` does not exist on `ToolCallRecord`, so the alias has already
+drifted."** False. `createdAt: number` is the record's last field. The claim came
+from reading a fixed number of lines after the declaration, which cut the
+interface short — **the same reading error that produced the `worker.spawned`
+mismatch earlier in this document.** Two false findings from one habit. The
+method changes: a type is read from its opening brace to its closing brace, never
+from an excerpt.
 
-## What changes, and what does not
+**"Exporting the alias freezes a database row as the public contract."** True in
+form, wrong in substance. The event and the row are one artifact by design, not
+by accident, and `ToolCallRecord` is already exported (`index.ts:404`).
 
-**Changes:** `ToolCalledEventPayload` stops being an alias and becomes an
-interface with the fourteen fields it already carries; one type-level test.
+## What separation would cost
 
-**Does not change:** the published object, the publish site, the three
-subscribers (structural typing — no edit, no recompile break), `ToolCallRecord`
-itself, `istorage.ts`, and every other event.
+The compiler guard on the bridge. Today, adding a required field to
+`ToolCallRecord` breaks the build at the publish site, which is where it must be
+fixed. After separation the two shapes drift independently: the addition
+compiles, and `saveToolCall` is called with an object missing a required field —
+a build error today, a silent one after.
 
-**Not decided here:** whether `ToolCallRecord` should remain exported from
-`index.ts` at all. That is a storage-surface question, not an event question,
-and it does not block this.
+**Gain from separating: none that is real.** The theoretical risk — storage
+changes the public contract — is the intended behaviour here.
+
+## And the pattern says so
+
+`PATTERNS.md` P7 — *Permanent Structure Is the Last Resort*: solve with what you
+have, extend what you have, create a new lasting artifact only when nothing else
+reaches. A second interface duplicating an existing one, plus a test to keep the
+duplicate honest, is a permanent structure invented to solve a problem that the
+trace shows does not exist.
+
+## Decision
+
+Export `ToolCalledEventPayload` as it stands. Add a comment at its declaration
+recording *why* it is an alias — that the payload is the stored row minus the
+minted keys — so the next reader does not repeat this investigation.
+
+**So all 26 events are mechanical.** There is no second, decision-carrying
+change. One stage, one review.
 
 ---
 
-Nothing above has been acted on. Next: the Contract Export Plan — 25 mechanical
-declarations in one change, and this decision in a second, separate one.
+Nothing above has been acted on. Next: the Contract Export Plan — 26 mechanical
+declarations, zero behaviour change.
