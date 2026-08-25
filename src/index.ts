@@ -23,6 +23,13 @@ let state: State = emptyState();
 // The engine, once it answers. Absent means the console is usable and says so
 // when asked to do something that needs one — not that it is broken.
 let engine: Engine | null = null;
+// The engine is opened while the opening plays, and a person can type before it
+// answers. Recorded here rather than lost: "no engine" is only true once the
+// door has actually reported, and saying it while the engine is still opening
+// is the console lying about its own state — measured, a goal typed five
+// seconds in was told there was nothing to run it against while the engine was
+// on its way.
+let engineOpening: Promise<void> | null = null;
 
 const add = (item: Item) => edit(s => ({...s, items: [...s.items, item]}));
 
@@ -101,7 +108,7 @@ function key(k: Key) {
         // `following` is what decides, and it is the viewport's to decide.
         // Submitted after the state is committed, so what the person typed is
         // on screen before the engine is asked anything.
-        queueMicrotask(() => ask(text));
+        void ask(text);
         return {
           ...s,
           items: [...s.items, {kind: 'said', id: `said-${s.items.length}`, text}],
@@ -129,7 +136,10 @@ function key(k: Key) {
  * that also printed the returned value would say the same thing twice, and the
  * two would disagree the moment the engine's own account is the better one.
  */
-function ask(goal: string): void {
+async function ask(goal: string): Promise<void> {
+  // Wait for the door to finish answering before deciding there is nothing
+  // behind it. Resolved already once it has, so a later goal pays nothing.
+  if (engineOpening) await engineOpening;
   if (!engine) {
     add({kind: 'noted', id: `noted-${Date.now()}`, lines: ['no engine — nothing to run this against']});
     return;
@@ -158,7 +168,7 @@ if (process.env['DEMO']) {
   // Opened after the screen is taken, so anything it prints on the way lands in
   // the capture rather than on a frame. It answers in about a second and a half
   // and the opening runs for nine, so it is ready before anyone can type.
-  void openEngine().then(opened => {
+  engineOpening = openEngine().then(opened => {
     if (isFailure(opened)) {
       add({
         kind: 'noted',
