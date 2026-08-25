@@ -106,8 +106,16 @@ function key(k: Key) {
         // Scrolling to the end on new content is the console following the
         // conversation. A reader who had scrolled back keeps their place —
         // `following` is what decides, and it is the viewport's to decide.
-        // Submitted after the state is committed, so what the person typed is
-        // on screen before the engine is asked anything.
+        // An unanswered question outranks a new goal: the engine is stopped
+        // and waiting on this person, so what they type next is the answer.
+        // Sending it as a fresh goal instead would leave the first one hanging
+        // forever and start a second — the console deciding, wrongly, that the
+        // question was rhetorical.
+        const waiting = pendingQuestion(s);
+        if (waiting) {
+          void reply(waiting.goalId, waiting.id, text);
+          return {...s, input: '', caret: 0};
+        }
         void ask(text);
         return {
           ...s,
@@ -126,6 +134,43 @@ function key(k: Key) {
     input: s.input.slice(0, s.caret) + k.text + s.input.slice(s.caret),
     caret: s.caret + k.text.length
   }));
+}
+
+/** The last question with no answer, if the engine is waiting on one. */
+function pendingQuestion(s: State): {id: string; goalId: string} | undefined {
+  for (let i = s.items.length - 1; i >= 0; i--) {
+    const item = s.items[i]!;
+    if (item.kind !== 'asked') continue;
+    return item.answer === undefined ? {id: item.id, goalId: item.goalId} : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Answer the question the engine stopped for, and let it carry on.
+ *
+ * The answer is written onto the question itself rather than added as a new
+ * item: they are one exchange, and a reader scrolling back should find the
+ * reply under the question that prompted it, not somewhere further down.
+ */
+async function reply(goalId: string, questionId: string, text: string): Promise<void> {
+  edit(s => ({
+    ...s,
+    items: s.items.map(i => (i.id === questionId && i.kind === 'asked' ? {...i, answer: text} : i))
+  }));
+
+  if (engineOpening) await engineOpening;
+  if (!engine) {
+    add({kind: 'noted', id: `noted-${Date.now()}`, lines: ['no engine — the answer went nowhere']});
+    return;
+  }
+  await engine.answer(goalId, text).catch((err: unknown) => {
+    add({
+      kind: 'noted',
+      id: `noted-${Date.now()}`,
+      lines: [`the answer was not accepted: ${err instanceof Error ? err.message : String(err)}`]
+    });
+  });
 }
 
 /**

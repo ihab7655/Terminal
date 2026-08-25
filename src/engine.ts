@@ -26,6 +26,16 @@ export type Engine = {
   watch(handler: (event: EngineEvent) => void): () => void;
   /** Submit a goal. Resolves when the engine has finished with it. */
   submit(goal: string): Promise<{success: boolean; status: string}>;
+  /**
+   * Answer a question the engine stopped for.
+   *
+   * `answerClarification` lives on MainBrain, not on ApplicationRuntime — the
+   * runtime exposes `context` and the brain is reached through it, which is
+   * what `engine-rest`'s own controller does (goals.controller.ts:98). Checked
+   * rather than assumed: `executeGoal` was already one wrong guess on this
+   * surface.
+   */
+  answer(goalId: string, text: string): Promise<{success: boolean; status: string}>;
   shutdown(): Promise<void>;
 };
 
@@ -130,6 +140,16 @@ export async function openEngine(enginePath = DEFAULT_ENGINE): Promise<Engine | 
         const result = await (
           app['executeGoal'] as (r: {goal: string}) => Promise<{success: boolean; status: string}>
         )({goal});
+        return {success: result?.success ?? false, status: result?.status ?? 'unknown'};
+      },
+      answer: async (goalId, text) => {
+        const context = app['context'] as {mainBrain: Record<string, unknown>};
+        const result = await (
+          context.mainBrain['answerClarification'] as (
+            g: string,
+            r: string
+          ) => Promise<{success: boolean; status: string}>
+        )(goalId, text);
         return {success: result?.success ?? false, status: result?.status ?? 'unknown'};
       },
       shutdown: () => (app['shutdown'] as () => Promise<void>)()

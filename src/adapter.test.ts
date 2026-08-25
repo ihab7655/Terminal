@@ -126,5 +126,18 @@ for (const t of ['tool.args.normalized', 'worker.done', 'goal.completed', 'retry
   ok(`${t} renders nothing`, toItem(ev(t, {})) === undefined);
 }
 
+
+// ── the question carries what an answer needs ───────────────────────────────
+console.log('\nasked carries the goal an answer is addressed to');
+ok('goalId comes from the envelope, not the payload',
+  (() => {
+    const i = toItem({
+      eventType: 'clarification.requested',
+      goalId: 'goal-42',
+      payload: {question: 'Which database?', confidence: 0.3, missingInformation: [], settled: []}
+    });
+    return i?.kind === 'asked' && i.goalId === 'goal-42' && i.question === 'Which database?';
+  })());
+
 console.log(failed === 0 ? '\nall good.\n' : `\n${failed} failed.\n`);
 process.exit(failed === 0 ? 0 : 1);

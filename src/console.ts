@@ -56,7 +56,15 @@ export type Item =
    * more grey note would hide the fact that nothing is running and the engine is
    * waiting on the person.
    */
-  | {kind: 'asked'; id: string; question: string; answer?: string}
+  | {
+      kind: 'asked';
+      id: string;
+      question: string;
+      /** Which execution is waiting. ADR-011 puts it on every event's envelope,
+       *  and without it an answer has nowhere to go. */
+      goalId: string;
+      answer?: string;
+    }
   /** The engine's own voice. Prose, unlabelled. */
   | {kind: 'spoke'; id: string; text: string}
   /** Short findings under what was just said. */

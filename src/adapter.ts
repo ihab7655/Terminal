@@ -132,7 +132,11 @@ export function toItem(event: EngineEvent): Item | undefined {
     // ── a question that stopped the goal ───────────────────────────────────
     case 'clarification.requested': {
       const question = str(p['question']);
-      return question ? {kind: 'asked', id: id('asked'), question} : undefined;
+      // The goal is the envelope's, not the payload's — it is what an answer is
+      // addressed to.
+      return question
+        ? {kind: 'asked', id: id('asked'), question, goalId: event.goalId}
+        : undefined;
     }
 
     // ── stumble, and recovery ──────────────────────────────────────────────
