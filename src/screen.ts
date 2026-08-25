@@ -56,6 +56,21 @@ const SHOW_CURSOR = `${ESC}[?25h`;
 // width row. Restored on the way out, because the shell after us expects it.
 const WRAP_OFF = `${ESC}[?7l`;
 const WRAP_ON = `${ESC}[?7h`;
+// The wheel, reported as itself.
+//
+// In the alternate buffer a terminal has nowhere to scroll, so many of them
+// (xterm's alternateScroll, on by default in several) helpfully translate a
+// wheel turn into up/down arrows instead. That was harmless while the arrows
+// scrolled a line. It stopped being harmless the moment the arrows started
+// recalling history: a person spinning the wheel to read back would have
+// watched their half-typed goal be replaced by old ones.
+//
+// Asking for wheel events directly (1000 = report buttons, and the wheel is
+// buttons 64/65; 1006 = report them in SGR form, which has no 223-column limit)
+// means the terminal sends the turn as a turn, and the arrows are free to mean
+// what a person expects them to mean.
+const WHEEL_ON = `${ESC}[?1000h${ESC}[?1006h`;
+const WHEEL_OFF = `${ESC}[?1006l${ESC}[?1000l`;
 const at = (row: number) => `${ESC}[${row};1H`;
 
 let held = false;
@@ -64,14 +79,14 @@ let held = false;
 export function takeScreen(out: NodeJS.WriteStream = process.stdout): void {
   if (held || !out.isTTY) return;
   held = true;
-  emit(out, ENTER_ALT + WRAP_OFF + HIDE_CURSOR);
+  emit(out, ENTER_ALT + WRAP_OFF + HIDE_CURSOR + WHEEL_ON);
 }
 
 /** Give it back. Safe to call when it was never taken. */
 export function releaseScreen(out: NodeJS.WriteStream = process.stdout): void {
   if (!held) return;
   held = false;
-  emit(out, SHOW_CURSOR + WRAP_ON + LEAVE_ALT);
+  emit(out, WHEEL_OFF + SHOW_CURSOR + WRAP_ON + LEAVE_ALT);
 }
 
 // A screen left held outlives the process that held it: the user's shell comes

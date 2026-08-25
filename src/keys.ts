@@ -13,7 +13,8 @@ export type KeyName =
   | ''
   | 'up' | 'down' | 'left' | 'right'
   | 'enter' | 'escape' | 'tab' | 'backspace' | 'delete'
-  | 'home' | 'end' | 'pageUp' | 'pageDown';
+  | 'home' | 'end' | 'pageUp' | 'pageDown'
+  | 'wheelUp' | 'wheelDown' | 'click';
 
 export type Key = {
   /** A settled name for the keys that have one; empty for ordinary text. */
@@ -21,6 +22,8 @@ export type Key = {
   /** The printable characters. A pasted run arrives whole, as one key. */
   text: string;
   ctrl: boolean;
+  /** For a click: the 1-based screen row it happened on. */
+  row?: number;
 };
 
 const ESC = '\u001B';
@@ -67,6 +70,26 @@ export function decode(chunk: string): Key[] {
   let i = 0;
   while (i < chunk.length) {
     const rest = chunk.slice(i);
+
+    // A wheel turn, in SGR form: ESC[<button;col;rowM. Buttons 64 and 65 are
+    // the wheel; every other button is a click this console has no use for and
+    // drops rather than leaking as text. Matched before the arrow sequences
+    // because both begin with ESC[ and this one is longer.
+    const wheel = /^\u001B\[<(\d+);(\d+);(\d+)[Mm]/.exec(rest);
+    if (wheel) {
+      flush();
+      const [, button, , row] = wheel;
+      const press = wheel[0].endsWith('M');
+      if (Number(button) === 64) keys.push({name: 'wheelUp', text: '', ctrl: false});
+      else if (Number(button) === 65) keys.push({name: 'wheelDown', text: '', ctrl: false});
+      // The left button, on PRESS only: a click reports twice (press then
+      // release) and acting on both would toggle a row open and shut again in
+      // one gesture. Every other button is dropped rather than leaking as text.
+      else if (Number(button) === 0 && press)
+        keys.push({name: 'click', text: '', ctrl: false, row: Number(row)});
+      i += wheel[0].length;
+      continue;
+    }
 
     const match = SEQUENCES.find(([seq]) => rest.startsWith(seq));
     if (match) {

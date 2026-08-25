@@ -45,5 +45,29 @@ console.log('\nnothing printable is lost');
   check('and nothing else', keys.length, 2);
 }
 
+// ── The wheel ────────────────────────────────────────────────────────────────
+//
+// In the alternate buffer many terminals turn a wheel notch into an up/down
+// arrow. Harmless while the arrows scrolled; not harmless now that they recall
+// history — a person reading back would have watched their draft be replaced.
+// So the wheel is asked for directly (screen.ts) and arrives as itself.
+{
+  const E = '\u001B';
+  check('a wheel turn up is a wheel turn', names(`${E}[<64;10;5M`), ['wheelUp']);
+  check('and down', names(`${E}[<65;10;5M`), ['wheelDown']);
+  check('the release form is read too, not left as text', names(`${E}[<64;10;5m`), ['wheelUp']);
+  check('a left click is a click, and carries its row', names(`${E}[<0;10;5M`), ['click']);
+  check('and only on press — a release would toggle the same row shut again',
+    names(`${E}[<0;10;5m`), []);
+  check('the row is the one the terminal reported', decode(`${E}[<0;10;7M`)[0]!.row, 7);
+  check('a middle or right click is dropped rather than leaking as text',
+    names(`${E}[<1;10;5M${E}[<2;10;5M`), []);
+  check('a wheel turn does not swallow what follows it',
+    names(`${E}[<65;1;1Mhi`), ['wheelDown', '«hi»']);
+  check('an arrow is still an arrow', names(`${E}[A`), ['up']);
+  check('a wheel report with large coordinates still parses',
+    names(`${E}[<64;1000;900M`), ['wheelUp']);
+}
+
 console.log(failures === 0 ? '\nall good.\n' : `\n${failures} failed.\n`);
 process.exit(failures === 0 ? 0 : 1);
