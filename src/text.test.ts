@@ -2,7 +2,7 @@
 // property the frame depends on: the frame is painted from HOME with a fixed
 // number of rows, so one row the terminal decides to wrap pushes the bottom of
 // the picture off the screen.
-import {cell, fit, labelled, wrap, fitStyled} from './text.js';
+import {cell, fit, labelled, wrap, fitStyled, width as columnsOf} from './text.js';
 
 let failures = 0;
 const check = (name: string, ok: boolean, detail = '') => {
@@ -71,6 +71,57 @@ console.log('\nfitStyled: visible columns, not characters');
   eq('plain text behaves as before', seen(fitStyled('x'.repeat(80), 12)), 12);
   eq('zero width is empty', fitStyled(`${red}xxxx`, 0), '');
   eq('exactly the width is not truncated', seen(fitStyled(`${red}${'x'.repeat(12)}`, 12)), 12);
+}
+
+// ── columns, not characters ──────────────────────────────────────────────────
+//
+// From a real Arabic session: `اسمي DeepSeek! 😊 كيف يمكنني مساعدتك اليوم؟`
+// came back on screen as `اسمي DeepSeek! 😊st` with the rest orphaned on the
+// next row. `.slice()` had cut between the emoji's two code units.
+console.log('\ncolumns, not characters');
+{
+  const halfChar = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  check('an emoji is never cut in half', wrap('a😊b c', 2).every(r => !halfChar.test(r)));
+  check('an emoji counts as the two columns it occupies',
+    columnsOf('😊') === 2 && columnsOf('a😊') === 3, String(columnsOf('😊')));
+  check('Arabic counts one column per letter', columnsOf('مرحبا') === 5, String(columnsOf('مرحبا')));
+  check('Arabic diacritics take no column of their own',
+    columnsOf('مَرْحَبا') === 5, String(columnsOf('مَرْحَبا')));
+  check('fit cuts on a character boundary', !halfChar.test(fit('a😊bcd', 4)), fit('a😊bcd', 4));
+  check('fit respects the columns it was given', columnsOf(fit('a😊bcd', 4)) <= 4);
+  check('cell pads to the columns it promises, emoji included',
+    columnsOf(cell('😊', 5)) === 5, String(columnsOf(cell('😊', 5))));
+  check('a character wider than the whole line still terminates', wrap('😊😊', 1).length === 2);
+  check('every wrapped row of a mixed Arabic line fits',
+    wrap('اسمي DeepSeek! 😊 كيف يمكنني مساعدتك اليوم؟', 20).every(r => columnsOf(r) <= 20));
+}
+
+// ── a row is a row ───────────────────────────────────────────────────────────
+//
+// The engine's summary of a finished goal is several lines. Handed through as
+// one "word", its breaks reached the terminal uncounted: the frame said two
+// rows, the terminal drew five, and the bottom of the picture fell off screen.
+console.log('\na row is a row');
+{
+  const summary = 'Created `print_numbers.py`\nIt contains:\nfor i in range(1, 11):\n    print(i)';
+  const rows = wrap(summary, 60);
+  check('no returned row hides a line break', rows.every(r => !/[\r\n]/.test(r)));
+  check('each line of the text gets at least its own row', rows.length >= 4, String(rows.length));
+  check('a blank line between paragraphs survives as a blank row',
+    wrap('one\n\ntwo', 20).length === 3, JSON.stringify(wrap('one\n\ntwo', 20)));
+  check('\\r\\n is one break, not two', wrap('a\r\nb', 20).length === 2,
+    JSON.stringify(wrap('a\r\nb', 20)));
+  check('an indented line keeps its indent',
+    wrap('for n in range(3):\n    print(n)', 40)[1] === '    print(n)',
+    JSON.stringify(wrap('for n in range(3):\n    print(n)', 40)));
+  check('a wrapped indented line keeps it on every row',
+    wrap('    one two three four five six', 14).every(r => r.startsWith('    ')),
+    JSON.stringify(wrap('    one two three four five six', 14)));
+  check('an indent too deep for the line is given up rather than crushing the text',
+    wrap('          deep', 12).every(r => r.length <= 12),
+    JSON.stringify(wrap('          deep', 12)));
+  check('fit turns a break into a space rather than a second row',
+    !/[\r\n]/.test(fit('a\nb', 20)), JSON.stringify(fit('a\nb', 20)));
 }
 
 console.log(failures === 0 ? '\nall good.\n' : `\n${failures} failed.\n`);
