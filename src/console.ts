@@ -1,3 +1,5 @@
+import {NO_HISTORY, type History} from './history.js';
+import {RAIL_ROWS, rail} from './rail.js';
 import {paint, screenSize} from './screen.js';
 import {INVERSE, RESET, colour, paint as tint} from './style.js';
 import {cell, fit, fitStyled, wrap} from './text.js';
@@ -33,6 +35,9 @@ import {START, reflow, scroll, windowOnto, type ScrollCommand, type Viewport} fr
 //     touched, cut at the edge like a terminal cuts it
 
 export type ItemState = 'ok' | 'failed' | 'running';
+
+/** One line the engine added to or removed from a file. */
+export type Change = {readonly sign: '+' | '-'; readonly text: string};
 
 export type Item =
   /** What the person asked for. The anchor of the whole log. */
@@ -73,6 +78,16 @@ export type Item =
   | {
       kind: 'did';
       id: string;
+      /**
+       * What this call changed in the code, when it changed code.
+       *
+       * Folded, it is one line saying how much: `+3 -1`. Opened — Tab, or a
+       * click on the row — it is the lines themselves. That is the whole reason
+       * a click on a `write_file` row does anything at all: before this, such a
+       * row had no captured output and nothing to show, which is exactly what
+       * "the folding does not work" looked like from outside.
+       */
+      changes?: readonly Change[];
       verb: string;
       object: string;
       state: ItemState;
@@ -96,8 +111,19 @@ export type State = {
    * when a duration on screen could have changed.
    */
   now: number;
-  /** Whether captured output is unfolded. One switch, for everything. */
-  open: boolean;
+  /**
+   * Which `did` items are showing all of their captured output.
+   *
+   * It used to be one boolean for the whole session, and its comment said why:
+   * "folding one call at a time would need a selection — a cursor, keys to move
+   * it, a rendered highlight — and that is a layer this does not have yet."
+   * A click IS that selection, and it arrives with the row it happened on. So
+   * the layer never had to be built: Tab still opens or closes everything, and
+   * a click opens or closes the one thing under the pointer.
+   */
+  open: ReadonlySet<string>;
+  /** What was typed and sent before, and where the arrows have walked to. */
+  history: History;
   /**
    * Whether a goal is running that Esc could stop.
    *
@@ -117,7 +143,8 @@ export const emptyState = (): State => ({
   view: START,
   spinner: 0,
   now: Date.now(),
-  open: false,
+  history: NO_HISTORY,
+  open: new Set<string>(),
   stoppable: false
 });
 
@@ -188,14 +215,52 @@ function outputRows(
   left: number,
   width: number
 ): string[] {
-  if (item.output.length === 0) return [];
   const room = Math.max(8, width - left);
   const tone = item.state === 'failed' ? colour.red : colour.muted;
   const at = (line: string, c: string) => ' '.repeat(left) + tint(fit(line, room), c);
 
-  if (open) return item.output.map(line => at(line, tone));
+  // The code first, when there is code: it is what the call was FOR. Captured
+  // output is what happened around it.
+  const changed = changeRows(item, open, left, room);
 
-  return [at(item.output[item.output.length - 1]!, tone)];
+  if (item.output.length === 0) return changed;
+  if (open) return [...changed, ...item.output.map(line => at(line, tone))];
+  return [...changed, at(item.output[item.output.length - 1]!, tone)];
+}
+
+/** The change this call made: a count while folded, the lines while open. */
+function changeRows(
+  item: Extract<Item, {kind: 'did'}>,
+  open: boolean,
+  left: number,
+  room: number
+): string[] {
+  const changes = item.changes ?? [];
+  if (changes.length === 0) return [];
+
+  if (!open) {
+    // Folded, it says how much changed and nothing else. A first line of code
+    // as a preview would be a sample the reader cannot trust — code is only
+    // meaningful whole, which is what opening it is for.
+    const added = changes.filter(c => c.sign === '+').length;
+    const removed = changes.length - added;
+    const parts = [
+      added > 0 ? tint(`+${added}`, colour.added) : '',
+      removed > 0 ? tint(`-${removed}`, colour.removed) : ''
+    ].filter(Boolean);
+    return [' '.repeat(left) + parts.join(' ') + tint(added + removed === 1 ? ' line' : ' lines', colour.dim)];
+  }
+
+  // Open: the sign is column one of the line, where it is scanned down the page
+  // for free — the same reason the state mark leads a `did` row. Never wrapped,
+  // and cut at the edge like a terminal cuts a long line, because re-flowing
+  // code silently changes what it says.
+  return changes.map(
+    c =>
+      ' '.repeat(left) +
+      tint(c.sign + ' ', c.sign === '+' ? colour.added : colour.removed) +
+      tint(fit(c.text, Math.max(4, room - 2)), c.sign === '+' ? colour.added : colour.removed)
+  );
 }
 
 function itemRows(item: Item, state: State, width: number, verbs: number): string[] {
@@ -284,14 +349,29 @@ function itemRows(item: Item, state: State, width: number, verbs: number): strin
         tint(line, objectTone)
     )
   );
-  rows.push(...outputRows(item, state.open, left, width));
+  rows.push(...outputRows(item, state.open.has(item.id), left, width));
   return rows;
 }
 
 /** Every row of the session, at this width. The viewport decides what is seen. */
 export function contentRows(state: State, width: number): string[] {
+  return contentRowsWithOwners(state, width).rows;
+}
+
+/**
+ * The same rows, plus which item each one came from.
+ *
+ * Built by the one walk that builds the rows rather than by a second pass that
+ * would have to re-derive the same skipping and spacing rules — and drift from
+ * them. `undefined` is a row no item owns: the blank line between blocks.
+ */
+export function contentRowsWithOwners(
+  state: State,
+  width: number
+): {rows: string[]; owners: (string | undefined)[]} {
   const verbs = verbWidth(state.items);
   const rows: string[] = [];
+  const owners: (string | undefined)[] = [];
   let previous: Item['kind'] | null = null;
 
   // A phase describes where the engine IS, so only the last one is true. Eight
@@ -316,11 +396,53 @@ export function contentRows(state: State, width: number): string[] {
     // `noted` lines — the gap found, the catalog declining, the build, the
     // adoption — and a blank line between each broke one story into scraps.
     const together = item.kind === previous && (item.kind === 'did' || item.kind === 'noted');
-    if (rows.length > 0 && !together) rows.push('');
-    rows.push(...itemRows(item, state, width, verbs));
+    if (rows.length > 0 && !together) {
+      rows.push('');
+      owners.push(undefined);
+    }
+    const drawn = itemRows(item, state, width, verbs);
+    rows.push(...drawn);
+    for (let n = 0; n < drawn.length; n++) owners.push(item.id);
     previous = item.kind;
   }
-  return rows;
+  return {rows, owners};
+}
+
+/**
+ * Which item is under a click, or undefined.
+ *
+ * `row` is 1-based, as a terminal reports it. The window's own offset is what
+ * turns that into a position in the content — the same offset the frame was
+ * drawn with, so what a person points at is what they hit.
+ */
+export function itemAtRow(state: State, row: number): string | undefined {
+  const {columns, rows: height} = screenSize();
+  const bodyRows = Math.max(1, height - 2);
+  if (row < 1 || row > bodyRows) return undefined; // the footer, or off the frame
+  const {owners} = contentRowsWithOwners(state, Math.max(20, columns));
+  const view = reflow(state.view, owners.length, bodyRows);
+  const start = Math.max(0, Math.min(view.offset, Math.max(0, owners.length - bodyRows)));
+  return owners[start + row - 1];
+}
+
+/** Is there anything under this row to open — captured output, or a change? */
+const foldable = (item: Extract<Item, {kind: 'did'}>): boolean =>
+  item.output.length > 0 || (item.changes?.length ?? 0) > 0;
+
+/** Open a `did` item's detail, or close it. Anything else is left alone. */
+export function toggleOutput(state: State, itemId: string | undefined): State {
+  const item = state.items.find(i => i.id === itemId);
+  if (!item || item.kind !== 'did' || !foldable(item)) return state;
+  const open = new Set(state.open);
+  if (!open.delete(item.id)) open.add(item.id);
+  return {...state, open};
+}
+
+/** Tab: everything with output, or nothing. */
+export function toggleAllOutput(state: State): State {
+  if (state.open.size > 0) return {...state, open: new Set<string>()};
+  const withOutput = state.items.filter(i => i.kind === 'did' && foldable(i));
+  return {...state, open: new Set(withOutput.map(i => i.id))};
 }
 
 /** The composer and what the keys do — always the last two rows of the frame. */
@@ -335,18 +457,23 @@ function footerRows(state: State, width: number, below: number): string[] {
       ? prompt + INVERSE + ' ' + RESET + tint(' say something to the engine', colour.muted)
       : prompt + colour.ink + before + INVERSE + at + RESET + colour.ink + after + RESET;
 
-  const folded = state.items.some(i => i.kind === 'did' && i.output.length > 0);
+  const folded = state.items.some(i => i.kind === 'did' && foldable(i));
   // Esc is offered only while something is running — the one key here that is
   // sometimes meaningless, and a key that does nothing should not be advertised.
   const quit = state.stoppable ? 'Esc stops · Ctrl+C quit' : 'Ctrl+C quit';
+  // Offered only once there is something to walk back to, same rule as Esc.
+  const recall = state.history.entries.length > 0 ? '↑↓ recalls · ' : '';
   const keys =
     below > 0
       ? `${below} row${below === 1 ? '' : 's'} below · PgDn follows again · ${quit}`
       : folded
-        ? `Tab ${state.open ? 'folds' : 'unfolds'} output · PgUp/PgDn scroll · Enter sends · ${quit}`
-        : `PgUp/PgDn scroll · Home/End jump · Enter sends · ${quit}`;
+        ? `Tab ${state.open.size > 0 ? 'folds' : 'unfolds'} output · click a row · ${recall}${quit}`
+        : `${recall}PgUp/PgDn scroll · Home/End jump · Enter sends · ${quit}`;
 
-  return [fitStyled(line, width), tint('  ' + fit(keys, Math.max(1, width - 2)), colour.dim)];
+  // The keys ride the rail that closes the console, so they are returned bare —
+  // the rail does the framing, and a second indent inside it would set them off
+  // from a line they are meant to sit in.
+  return [fitStyled(line, width), keys];
 }
 
 /**
@@ -357,7 +484,12 @@ function footerRows(state: State, width: number, below: number): string[] {
 export function frame(state: State): {rows: string[]; view: Viewport} {
   const {columns, rows: height} = screenSize();
   const width = Math.max(20, columns);
-  const bodyRows = Math.max(1, height - 2);
+  // The rail above, the transcript, the composer, and the rail that closes it —
+  // the arrangement the prototype this console's design comes from uses on
+  // every screen (trakdem, src/console/ConsoleShell.tsx). The chrome is two
+  // rows, and rule 3 still holds inside them: the transcript scrolls, it is
+  // never shed.
+  const bodyRows = Math.max(1, height - 2 - RAIL_ROWS * 2 - 1);
 
   const content = contentRows(state, width);
   const view = reflow(state.view, content.length, bodyRows);
@@ -367,7 +499,42 @@ export function frame(state: State): {rows: string[]; view: Viewport} {
   while (body.length < bodyRows) body.push('');
   if (above > 0) body[0] = tint(`  ↑ ${above} above`, colour.dim);
 
-  return {rows: [...body, ...footerRows(state, width, below)], view};
+  const [composer, keys] = footerRows(state, width, below);
+  // A plain line between the transcript and the composer, as the prototype
+  // draws it: what has been said is finished, what is being typed is not, and
+  // the two are different kinds of thing sharing one screen. It costs a row of
+  // transcript, which is why it is the last piece of chrome added and the first
+  // that would go.
+  const divider = tint('─'.repeat(width), colour.dim);
+  return {
+    rows: [
+      rail(width, 'top', identity(state), status(state)),
+      ...body,
+      divider,
+      composer!,
+      rail(width, 'bottom', keys!)
+    ],
+    view
+  };
+}
+
+/** What this console is, said once, at the top. */
+const identity = (state: State): string =>
+  state.items.length === 0 ? 'DRAGON / console' : 'DRAGON / operating console';
+
+/**
+ * What it is doing, at the far end of the same line.
+ *
+ * The rail drops a status whole before it cuts the title, so this says one
+ * thing at a time and says it plainly. It is read from the same facts the body
+ * is drawn from — never a second source that could disagree with the screen.
+ */
+function status(state: State): string {
+  if (state.stoppable) return 'working';
+  const spoke = [...state.items].reverse().find(i => i.kind === 'spoke' || i.kind === 'asked');
+  if (spoke?.kind === 'asked' && spoke.answer === undefined) return 'waiting on you';
+  if (state.items.some(i => i.kind === 'noted' && i.id === 'engine-failed')) return 'no engine';
+  return state.items.length === 0 ? 'ready' : 'idle';
 }
 
 /** Draw it. The only place a frame reaches the screen. */

@@ -1,4 +1,4 @@
-import type {Item} from './console.js';
+import type {Change, Item} from './console.js';
 
 // ── The engine's events, as things a person reads ────────────────────────────
 //
@@ -41,6 +41,37 @@ export type EngineEvent = {
 const now = () => Date.now();
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+
+/** Lines of a string, without the empty one a trailing newline leaves behind. */
+const linesOf = (text: string): string[] => {
+  const lines = text.split(/\r\n|\r|\n/);
+  if (lines[lines.length - 1] === '') lines.pop();
+  return lines;
+};
+
+/**
+ * The change a tool call made, as the call itself stated it.
+ *
+ * Only for calls that say what they changed. A tool that writes through some
+ * other shape says nothing here rather than being guessed at — the engine's own
+ * rule about not inferring from a workspace, applied to a display.
+ */
+function diffOf(tool: string, args: Record<string, unknown>): Change[] | undefined {
+  if (tool === 'write_file') {
+    const content = str(args['content']);
+    return content === undefined ? undefined : linesOf(content).map(text => ({sign: '+' as const, text}));
+  }
+  if (tool === 'edit_file') {
+    const before = str(args['old_string']);
+    const after = str(args['new_string']);
+    if (before === undefined && after === undefined) return undefined;
+    return [
+      ...linesOf(before ?? '').map(text => ({sign: '-' as const, text})),
+      ...linesOf(after ?? '').map(text => ({sign: '+' as const, text}))
+    ];
+  }
+  return undefined;
+}
 const num = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined);
 
 let seq = 0;
@@ -107,6 +138,19 @@ export function toItem(event: EngineEvent): Item | undefined {
       // printed `write_file  write_file`, which was visible the moment a
       // session was drawn and invisible to the compiler.
       const args = (p['args'] ?? {}) as Record<string, unknown>;
+      // WHAT THE ENGINE ACTUALLY CHANGED, when the call changed a file.
+      //
+      // A person watching an engine write code wants to see the code, and the
+      // event already carries it — write_file's args hold the whole `content`,
+      // edit_file's hold `old_string` and `new_string`. Rendering only
+      // "✓ write_file print_numbers.py" threw that away and left the reader to
+      // trust a filename.
+      //
+      // Nothing is computed here that the payload does not state. A write is
+      // all additions because that is what a write is; an edit is its removal
+      // and its addition. This console does not diff files — it shows what the
+      // call said it was doing.
+      const changes = diffOf(verb, args);
       const about =
         str(args['path']) ??
         str(args['command']) ??
@@ -120,7 +164,8 @@ export function toItem(event: EngineEvent): Item | undefined {
         verb,
         object: about,
         state: ok ? 'ok' : 'failed',
-        output: out.flatMap(s => s.split('\n')).filter(l => l.length > 0)
+        output: out.flatMap(s => s.split('\n')).filter(l => l.length > 0),
+        changes
       };
     }
 

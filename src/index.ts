@@ -1,8 +1,19 @@
 #!/usr/bin/env node
 import {randomUUID} from 'node:crypto';
 import {toItem} from './adapter.js';
-import {anythingTurning, draw, emptyState, scrollBy, type Item, type State} from './console.js';
+import {
+  anythingTurning,
+  draw,
+  emptyState,
+  itemAtRow,
+  scrollBy,
+  toggleAllOutput,
+  toggleOutput,
+  type Item,
+  type State
+} from './console.js';
 import {isFailure, openEngine, type Engine} from './engine.js';
+import {next as newerInHistory, previous as olderInHistory, remember} from './history.js';
 import {onKey, type Key} from './keys.js';
 import {advance, openingRows, skipOpening, startOpening, TICK_MS, type Opening} from './opening.js';
 import {paint, releaseScreen, screenSize, takeScreen} from './screen.js';
@@ -108,14 +119,33 @@ function key(k: Key) {
   switch (k.name) {
     case 'escape':
       return stopRunningGoal();
+    // A wheel turn moves the window, which is what it has always meant, and
+    // three rows is what a terminal sends per notch elsewhere. This is also the
+    // one consumer left for a line-at-a-time scroll, now that the arrows recall.
+    case 'wheelUp':
+      return edit(s => scrollBy(s, {kind: 'lines', delta: -3}));
+    case 'wheelDown':
+      return edit(s => scrollBy(s, {kind: 'lines', delta: 3}));
     case 'pageUp':
       return edit(s => scrollBy(s, {kind: 'page', delta: -1}));
     case 'pageDown':
       return edit(s => scrollBy(s, {kind: 'page', delta: 1}));
+    // THE ARROWS ANSWER WITH HISTORY, NOT WITH A ONE-LINE SCROLL.
+    //
+    // They used to move the window a line at a time — a job three other keys
+    // already do better (PgUp/PgDn a page, Home/End the ends) — while the thing
+    // a person reaches the up arrow for in any terminal had nowhere to be.
+    // Nothing was lost by the trade: scrolling kept every key it had.
     case 'up':
-      return edit(s => scrollBy(s, {kind: 'lines', delta: -1}));
+      return edit(s => {
+        const {history, line} = olderInHistory(s.history, s.input);
+        return {...s, history, input: line, caret: line.length};
+      });
     case 'down':
-      return edit(s => scrollBy(s, {kind: 'lines', delta: 1}));
+      return edit(s => {
+        const {history, line} = newerInHistory(s.history);
+        return {...s, history, input: line, caret: line.length};
+      });
     case 'home':
       return edit(s => scrollBy(s, {kind: 'top'}));
     case 'end':
@@ -131,10 +161,11 @@ function key(k: Key) {
           : {...s, input: s.input.slice(0, s.caret - 1) + s.input.slice(s.caret), caret: s.caret - 1}
       );
     case 'tab':
-      // One switch for all captured output. Folding one call at a time would
-      // need a selection — a cursor, keys to move it, a rendered highlight —
-      // and that is a layer this does not have yet.
-      return edit(s => ({...s, open: !s.open}));
+      // Everything, or nothing. The one-at-a-time case is the click below,
+      // which brings its own selection.
+      return edit(toggleAllOutput);
+    case 'click':
+      return edit(s => toggleOutput(s, itemAtRow(s, k.row ?? 0)));
     case 'enter': {
       const text = state.input.trim();
       if (text === '') return;
@@ -165,10 +196,11 @@ function key(k: Key) {
       // So: read state, write state, then send. One write per keystroke.
       edit(s =>
         waiting
-          ? {...s, input: '', caret: 0}
+          ? {...s, history: remember(s.history, text), input: '', caret: 0}
           : {
               ...s,
               items: [...s.items, {kind: 'said', id: `said-${s.items.length}`, text}],
+              history: remember(s.history, text),
               input: '',
               caret: 0
             }

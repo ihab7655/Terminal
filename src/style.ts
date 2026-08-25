@@ -24,7 +24,13 @@ export const colour = {
   amber: fg('#f1b34b'),
   amberDim: fg('#8a6a2f'),
   purple: fg('#9d78ff'),
-  red: fg('#ff5d6c')
+  red: fg('#ff5d6c'),
+  // A change to the code, in the two colours everyone already reads as added
+  // and removed. Kept in the same cool register as the rest of this palette
+  // rather than borrowed from a terminal's default green/red, which sit beside
+  // `ink` like a different program.
+  added: fg('#5fd7a0'),
+  removed: fg('#e8737f')
 } as const;
 
 /** Wrap text in a colour and close it. Never leave a colour open across a row. */
