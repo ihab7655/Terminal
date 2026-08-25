@@ -432,12 +432,15 @@ export function contentRowsWithOwners(
  */
 export function itemAtRow(state: State, row: number): string | undefined {
   const {columns, rows: height} = screenSize();
-  const bodyRows = Math.max(1, height - 2);
-  if (row < 1 || row > bodyRows) return undefined; // the footer, or off the frame
+  const {bodyRows, bodyTop} = layout(height);
+  // The rail is row 1; the transcript starts under it. A click on the rail, the
+  // divider, the composer or the closing rail belongs to no item.
+  const inBody = row - bodyTop;
+  if (inBody < 1 || inBody > bodyRows) return undefined;
   const {owners} = contentRowsWithOwners(state, Math.max(20, columns));
   const view = reflow(state.view, owners.length, bodyRows);
   const start = Math.max(0, Math.min(view.offset, Math.max(0, owners.length - bodyRows)));
-  return owners[start + row - 1];
+  return owners[start + inBody - 1];
 }
 
 /** Is there anything under this row to open — captured output, or a change? */
@@ -492,6 +495,22 @@ function footerRows(state: State, width: number, below: number): string[] {
 }
 
 /**
+ * WHERE THE TRANSCRIPT SITS, decided once.
+ *
+ * The frame draws a rail, the transcript, a divider, the composer, and the rail
+ * that closes it. Anything that has to map a SCREEN row back to a transcript row
+ * — a click — needs the same two numbers, and working them out a second time is
+ * how they drift: the click kept `height - 2` from before the rails existed, so
+ * it read every row as the one above it and opened the wrong thing, or nothing.
+ */
+const layout = (height: number) => ({
+  /** Rows of transcript the window can hold. */
+  bodyRows: Math.max(1, height - 2 - RAIL_ROWS * 2 - 1),
+  /** Screen rows above the transcript — the opening rail. */
+  bodyTop: RAIL_ROWS
+});
+
+/**
  * The whole frame: exactly as many rows as the window has, every one of them no
  * wider than it. Anything that does not fit is scrolled past, never dropped —
  * `above` and `below` are what the reader is told about the rest.
@@ -504,7 +523,7 @@ export function frame(state: State): {rows: string[]; view: Viewport} {
   // every screen (trakdem, src/console/ConsoleShell.tsx). The chrome is two
   // rows, and rule 3 still holds inside them: the transcript scrolls, it is
   // never shed.
-  const bodyRows = Math.max(1, height - 2 - RAIL_ROWS * 2 - 1);
+  const {bodyRows} = layout(height);
 
   const content = contentRows(state, width);
   const view = reflow(state.view, content.length, bodyRows);

@@ -71,6 +71,17 @@ const WRAP_ON = `${ESC}[?7h`;
 // what a person expects them to mean.
 const WHEEL_ON = `${ESC}[?1000h${ESC}[?1006h`;
 const WHEEL_OFF = `${ESC}[?1006l${ESC}[?1000l`;
+// PASTE, ARRIVING AS A PASTE.
+//
+// Without this a terminal hands pasted text over as if it had been typed, and a
+// paste with a line break in it is Enter — so pasting three lines sent three
+// goals to the engine before the person could read what they had pasted. That
+// is not a rough edge, it is the console acting on text nobody chose to send.
+//
+// With bracketed paste on, the terminal wraps it: ESC[200~ … ESC[201~. What is
+// between them is content, whatever it contains.
+const PASTE_ON = `${ESC}[?2004h`;
+const PASTE_OFF = `${ESC}[?2004l`;
 const at = (row: number) => `${ESC}[${row};1H`;
 
 let held = false;
@@ -79,14 +90,14 @@ let held = false;
 export function takeScreen(out: NodeJS.WriteStream = process.stdout): void {
   if (held || !out.isTTY) return;
   held = true;
-  emit(out, ENTER_ALT + WRAP_OFF + HIDE_CURSOR + WHEEL_ON);
+  emit(out, ENTER_ALT + WRAP_OFF + HIDE_CURSOR + WHEEL_ON + PASTE_ON);
 }
 
 /** Give it back. Safe to call when it was never taken. */
 export function releaseScreen(out: NodeJS.WriteStream = process.stdout): void {
   if (!held) return;
   held = false;
-  emit(out, WHEEL_OFF + SHOW_CURSOR + WRAP_ON + LEAVE_ALT);
+  emit(out, PASTE_OFF + WHEEL_OFF + SHOW_CURSOR + WRAP_ON + LEAVE_ALT);
 }
 
 // A screen left held outlives the process that held it: the user's shell comes

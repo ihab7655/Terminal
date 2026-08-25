@@ -69,5 +69,27 @@ console.log('\nnothing printable is lost');
     names(`${E}[<64;1000;900M`), ['wheelUp']);
 }
 
+// ── Paste ────────────────────────────────────────────────────────────────────
+//
+// Without bracketed paste a terminal hands pasted text over as if typed, so a
+// paste containing a line break IS Enter — three pasted lines sent three goals
+// before the person could read what they had pasted. Reported from a real
+// session, and the reason screen.ts asks for ESC[?2004h.
+{
+  const E = '\u001B';
+  const paste = (body: string) => `${E}[200~${body}${E}[201~`;
+
+  check('a pasted line is text, not a key', names(paste('hello')), ['«hello»']);
+  check('and it is marked as pasted', decode(paste('hello'))[0]!.pasted, true);
+  check('line breaks inside a paste do NOT send',
+    names(paste('one\ntwo\nthree')), ['«one two three»']);
+  check('\\r\\n inside a paste is one space too', names(paste('a\r\nb')), ['«a b»']);
+  check('typing after a paste still works', names(`${paste('x')}y`), ['«x»', '«y»']);
+  check('a real Enter after a paste still sends', names(`${paste('x')}\r`), ['«x»', 'enter']);
+  check('an unterminated paste keeps what arrived', names(`${E}[200~half`), ['«half»']);
+  check('an empty paste is nothing at all', names(paste('')), []);
+  check('typed text is not marked as pasted', decode('abc')[0]!.pasted, undefined);
+}
+
 console.log(failures === 0 ? '\nall good.\n' : `\n${failures} failed.\n`);
 process.exit(failures === 0 ? 0 : 1);

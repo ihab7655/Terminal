@@ -24,10 +24,14 @@ export type Key = {
   ctrl: boolean;
   /** For a click: the 1-based screen row it happened on. */
   row?: number;
+  /** True when this text was pasted rather than typed — content, never a key. */
+  pasted?: boolean;
 };
 
 const ESC = '\u001B';
 const DEL = '\u007f';
+const PASTE_START = `${ESC}[200~`;
+const PASTE_END = `${ESC}[201~`;
 
 // Longest first, so ESC[1~ is never read as ESC[1 followed by a tilde.
 const SEQUENCES: ReadonlyArray<readonly [string, KeyName]> = [
@@ -70,6 +74,25 @@ export function decode(chunk: string): Key[] {
   let i = 0;
   while (i < chunk.length) {
     const rest = chunk.slice(i);
+
+    // A PASTE IS CONTENT, NOT KEYSTROKES. The terminal wraps it in ESC[200~ …
+    // ESC[201~ (screen.ts asks for that), and everything between is text —
+    // including the line breaks, which is the whole point: pasting three lines
+    // used to send three goals before the person could read what they pasted.
+    //
+    // The breaks become spaces because this composer is one line. Turning them
+    // into a multi-line composer is a different piece of work; silently
+    // dropping half a paste, or sending it, is not the placeholder for it.
+    if (rest.startsWith(PASTE_START)) {
+      const end = rest.indexOf(PASTE_END);
+      const body = end < 0 ? rest.slice(PASTE_START.length) : rest.slice(PASTE_START.length, end);
+      flush();
+      const text = body.replace(/\r\n|\r|\n/g, ' ');
+      if (text !== '') keys.push({name: '', text, ctrl: false, pasted: true});
+      // An unterminated paste means the chunk ended mid-paste; take what came.
+      i += end < 0 ? rest.length : end + PASTE_END.length;
+      continue;
+    }
 
     // A wheel turn, in SGR form: ESC[<button;col;rowM. Buttons 64 and 65 are
     // the wheel; every other button is a click this console has no use for and

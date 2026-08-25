@@ -206,6 +206,18 @@ function key(k: Key) {
             }
       );
 
+      // SOMETHING MOVES THE MOMENT A LINE IS SENT.
+      //
+      // The engine's first event can be a minute away — classification and
+      // planning are LLM calls — and until this, nothing on screen said the
+      // console had even heard. Answering a question was the worst of it: the
+      // question sat there unchanged while the engine worked, and the only
+      // honest reading of that screen was that it had frozen.
+      //
+      // A phase, not a note, because a phase carries the turning mark and is
+      // replaced by the engine's own first phase the instant one arrives.
+      add({kind: 'phase', id: `sent-${Date.now()}`, text: 'thinking', since: Date.now()});
+
       if (waiting) void reply(waiting.goalId, waiting.id, text);
       else void ask(text);
       return;
