@@ -238,9 +238,15 @@ export function contentRows(state: State, width: number): string[] {
   // is where display decisions live (rule 5 — content decides layout; this is
   // content deciding what content means).
   const lastPhase = state.items.map(i => i.kind === 'phase').lastIndexOf(true);
+  // A phase is only true while the engine is between events. Once it has
+  // spoken — an ending, a question — the phase is over, and a spinner still
+  // turning beside it claims work that stopped. Drawn against a real engine,
+  // "⠋ planning" sat under a finished goal.
+  const endedAfter = state.items.map(i => i.kind === 'spoke' || i.kind === 'asked').lastIndexOf(true);
+  const phaseIsStale = endedAfter > lastPhase;
 
   for (const [index, item] of state.items.entries()) {
-    if (item.kind === 'phase' && index !== lastPhase) continue;
+    if (item.kind === 'phase' && (index !== lastPhase || phaseIsStale)) continue;
     // Consecutive items OF THE SAME KIND are one block; a change of kind gets
     // air around it. The rule is in the content, not in a spacing table.
     //

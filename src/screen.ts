@@ -26,6 +26,20 @@ import {visibleWidth} from './style.js';
 //   * **The alternate buffer**, so the user's scrollback is theirs and comes
 //     back untouched when this exits.
 
+// The real write, taken at load and never let go.
+//
+// The engine logs through pino and dotenvx prints a banner at import, so a host
+// that wires it captures both streams to keep them off a screen it owns. Going
+// through `out.write` meant every frame painted during those seconds went into
+// that capture too: measured on a real run, THREE frames out of forty-one
+// reached the screen, and the boot appeared frozen. Recorded in HANDOFF as the
+// thing to do before wiring the engine in; this is that.
+//
+// Owning the screen has to mean owning the way out to it.
+const stdoutWrite = process.stdout.write.bind(process.stdout);
+const emit = (out: NodeJS.WriteStream, text: string) =>
+  out === process.stdout ? stdoutWrite(text) : out.write(text);
+
 const ESC = '\u001B';
 
 const BEGIN_SYNC = `${ESC}[?2026h`;
@@ -50,14 +64,14 @@ let held = false;
 export function takeScreen(out: NodeJS.WriteStream = process.stdout): void {
   if (held || !out.isTTY) return;
   held = true;
-  out.write(ENTER_ALT + WRAP_OFF + HIDE_CURSOR);
+  emit(out, ENTER_ALT + WRAP_OFF + HIDE_CURSOR);
 }
 
 /** Give it back. Safe to call when it was never taken. */
 export function releaseScreen(out: NodeJS.WriteStream = process.stdout): void {
   if (!held) return;
   held = false;
-  out.write(SHOW_CURSOR + WRAP_ON + LEAVE_ALT);
+  emit(out, SHOW_CURSOR + WRAP_ON + LEAVE_ALT);
 }
 
 // A screen left held outlives the process that held it: the user's shell comes
@@ -98,7 +112,7 @@ export function paint(rows: readonly string[], out: NodeJS.WriteStream = process
     const gap = width - visibleWidth(row);
     frame += at(i + 1) + (gap > 0 ? row + ' '.repeat(gap) : row);
   }
-  out.write(frame + ERASE_TO_END + END_SYNC);
+  emit(out, frame + ERASE_TO_END + END_SYNC);
 }
 
 /**

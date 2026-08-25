@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-import {draw, emptyState, scrollBy, type State} from './console.js';
+import {toItem} from './adapter.js';
+import {draw, emptyState, scrollBy, type Item, type State} from './console.js';
+import {isFailure, openEngine, type Engine} from './engine.js';
 import {onKey, type Key} from './keys.js';
 import {advance, openingRows, skipOpening, startOpening, TICK_MS, type Opening} from './opening.js';
 import {paint, releaseScreen, screenSize, takeScreen} from './screen.js';
@@ -17,6 +19,12 @@ import {paint, releaseScreen, screenSize, takeScreen} from './screen.js';
 
 let opening: Opening = startOpening();
 let state: State = emptyState();
+
+// The engine, once it answers. Absent means the console is usable and says so
+// when asked to do something that needs one — not that it is broken.
+let engine: Engine | null = null;
+
+const add = (item: Item) => edit(s => ({...s, items: [...s.items, item]}));
 
 const show = () => {
   if (!opening.done) {
@@ -91,6 +99,9 @@ function key(k: Key) {
         // Scrolling to the end on new content is the console following the
         // conversation. A reader who had scrolled back keeps their place —
         // `following` is what decides, and it is the viewport's to decide.
+        // Submitted after the state is committed, so what the person typed is
+        // on screen before the engine is asked anything.
+        queueMicrotask(() => ask(text));
         return {
           ...s,
           items: [...s.items, {kind: 'said', id: `said-${s.items.length}`, text}],
@@ -110,16 +121,59 @@ function key(k: Key) {
   }));
 }
 
+/**
+ * Hand a goal to the engine, and let its events do the reporting.
+ *
+ * Nothing here renders the result: `completion.finished` and the phases before
+ * it arrive through `watch` and become items like everything else. A console
+ * that also printed the returned value would say the same thing twice, and the
+ * two would disagree the moment the engine's own account is the better one.
+ */
+function ask(goal: string): void {
+  if (!engine) {
+    add({kind: 'noted', id: `noted-${Date.now()}`, lines: ['no engine — nothing to run this against']});
+    return;
+  }
+  void engine.submit(goal).catch((err: unknown) => {
+    add({
+      kind: 'noted',
+      id: `noted-${Date.now()}`,
+      lines: [`the goal ended badly: ${err instanceof Error ? err.message : String(err)}`]
+    });
+  });
+}
+
 // A resize is a repaint, not an adjustment (rule 4). Nothing is reconciled:
 // the same state produces a different list of rows at the new size. True of the
 // opening too, which is why it holds no measurement of its own.
 const onResize = () => show();
 
-// A recorded session, only when asked for. Nothing imports demo.ts otherwise.
+// A recorded session, only when asked for. Nothing imports demo.ts otherwise,
+// and with DEMO set no engine is opened — the two are alternatives.
 if (process.env['DEMO']) {
   void import('./demo.js').then(({playDemo}) =>
     playDemo(change => edit(s => ({...s, items: change(s.items)})))
   );
+} else {
+  // Opened after the screen is taken, so anything it prints on the way lands in
+  // the capture rather than on a frame. It answers in about a second and a half
+  // and the opening runs for nine, so it is ready before anyone can type.
+  void openEngine().then(opened => {
+    if (isFailure(opened)) {
+      add({
+        kind: 'noted',
+        id: 'engine-failed',
+        lines: [`the engine did not open — ${opened.reason}`]
+      });
+      return;
+    }
+    engine = opened;
+    // Every execution event, through the adapter, in the order it arrived.
+    opened.watch(event => {
+      const item = toItem(event);
+      if (item) add(item);
+    });
+  });
 }
 
 takeScreen();
