@@ -127,31 +127,49 @@ function key(k: Key) {
       // need a selection — a cursor, keys to move it, a rendered highlight —
       // and that is a layer this does not have yet.
       return edit(s => ({...s, open: !s.open}));
-    case 'enter':
-      return edit(s => {
-        const text = s.input.trim();
-        if (text === '') return s;
-        // Scrolling to the end on new content is the console following the
-        // conversation. A reader who had scrolled back keeps their place —
-        // `following` is what decides, and it is the viewport's to decide.
-        // An unanswered question outranks a new goal: the engine is stopped
-        // and waiting on this person, so what they type next is the answer.
-        // Sending it as a fresh goal instead would leave the first one hanging
-        // forever and start a second — the console deciding, wrongly, that the
-        // question was rhetorical.
-        const waiting = pendingQuestion(s);
-        if (waiting) {
-          void reply(waiting.goalId, waiting.id, text);
-          return {...s, input: '', caret: 0};
-        }
-        void ask(text);
-        return {
-          ...s,
-          items: [...s.items, {kind: 'said', id: `said-${s.items.length}`, text}],
-          input: '',
-          caret: 0
-        };
-      });
+    case 'enter': {
+      const text = state.input.trim();
+      if (text === '') return;
+
+      // An unanswered question outranks a new goal: the engine is stopped and
+      // waiting on this person, so what they type next is the answer. Sending
+      // it as a fresh goal instead would leave the first one hanging forever
+      // and start a second — the console deciding, wrongly, that the question
+      // was rhetorical.
+      const waiting = pendingQuestion(state);
+
+      // NOTHING IS SENT FROM INSIDE `edit`, AND THAT IS NOT A STYLE CHOICE.
+      //
+      // `edit(change)` assigns `state = change(state)`. A send called from
+      // within `change` that writes state SYNCHRONOUSLY — as reply() does, to
+      // put the answer under its question before awaiting anything — has its
+      // write overwritten the instant `change` returns, because the object
+      // `change` returns was derived from the state as it was BEFORE the
+      // nested write.
+      //
+      // Measured 2026-08-25 against the real engine: the answer was typed, the
+      // question stayed bare on screen, and the engine resumed as if nothing
+      // had been shown. The exchange was one item short of being readable, and
+      // nothing in the log said why. ask() hides the same hazard behind its
+      // first `await` — until the door has already failed, where its "no
+      // engine" line is written synchronously too.
+      //
+      // So: read state, write state, then send. One write per keystroke.
+      edit(s =>
+        waiting
+          ? {...s, input: '', caret: 0}
+          : {
+              ...s,
+              items: [...s.items, {kind: 'said', id: `said-${s.items.length}`, text}],
+              input: '',
+              caret: 0
+            }
+      );
+
+      if (waiting) void reply(waiting.goalId, waiting.id, text);
+      else void ask(text);
+      return;
+    }
     default:
       break;
   }
