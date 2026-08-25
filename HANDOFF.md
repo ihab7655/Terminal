@@ -47,9 +47,26 @@ advance that is not happening.
 
 ## The engine
 
-**Not connected, deliberately.** The console does not import it, does not boot
-it and does not read it. It was connected once and that was building a machine
-behind a picture nobody had agreed on.
+**Still not connected here** — the console does not import it, boot it or read
+it, and that stays true until the console is built. What changed is what it
+would connect *to*.
+
+Work on the engine itself, 2026-08-24/25, all on `origin/master`:
+
+  * **all 26 live events now have exported payload contracts** (`7e2aff9`).
+    A consumer imports `KnownExecutionEvent` and `asKnown` from `engine-core`,
+    switches on `eventType`, and reads `payload` typed — no cast. Before this,
+    one of 26 had a contract a consumer could import.
+  * **two events that did not exist** (`ada99ba`): `need.transition` announces
+    every move through the nine-state Need machine, and `capability.attempt`
+    narrates what happens inside ACQUIRING — measured at up to 209 seconds of
+    silence before this.
+  * the investigation behind both lives in the engine repo now, under
+    `docs/lld/` and `docs/lld/discovery/` — moved there by `724be32` because
+    `WORKING-METHOD.md` §3 requires it, and the copies that were here are gone.
+
+So when the console is wired, the question "what does the engine publish, and
+what shape is it?" is answered by one import rather than by reading the engine.
 
 Measured while it was connected, so it does not have to be re-measured:
 
@@ -61,6 +78,8 @@ Measured while it was connected, so it does not have to be re-measured:
     capture the console's own frames with them — that happened, and three boot
     frames out of forty-one reached the screen. If the engine is ever wired in,
     `screen.ts` has to hold its own `process.stdout.write`, taken at load.
+  * the store refuses because `.env` was not being found under
+    `npm --workspaces` — fixed in the engine (`770d000`), not here.
 
 ## The direction
 
