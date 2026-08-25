@@ -121,7 +121,19 @@ export function toItem(event: EngineEvent): Item | undefined {
 
     // ── the engine's own voice ─────────────────────────────────────────────
     case 'completion.finished': {
-      const text = str(p['status']) ?? (p['success'] === true ? 'completed' : 'finished');
+      // What the engine said, when it said anything — a conversation's reply, a
+      // finished goal's own account of what it produced. The status word is the
+      // fallback, not the answer: a person who typed a greeting and read
+      // `completed` was shown the engine's bookkeeping instead of its reply,
+      // which is what this console exists to avoid.
+      //
+      // A stopped run is the one ending whose status IS the whole message, and
+      // it is not lost here: its summary is the stop's reason, which is what a
+      // reader wants over the bare word.
+      const text =
+        str(p['summary']) ??
+        str(p['status']) ??
+        (p['success'] === true ? 'completed' : 'finished');
       return {kind: 'spoke', id: id('spoke'), text};
     }
     case 'goal.failed': {

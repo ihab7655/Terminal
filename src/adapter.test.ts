@@ -139,5 +139,34 @@ ok('goalId comes from the envelope, not the payload',
     return i?.kind === 'asked' && i.goalId === 'goal-42' && i.question === 'Which database?';
   })());
 
+console.log('\nthe engine is heard, not summarised');
+ok('a conversation reply is what the reader sees, not the status word',
+  (() => {
+    const i = toItem(ev('completion.finished', {
+      success: true,
+      status: 'completed',
+      terminal: true,
+      durationMs: 1200,
+      attempts: 0,
+      summary: 'مرحبا! أنا بخير، كيف أقدر أساعدك؟'
+    }));
+    return i?.kind === 'spoke' && i.text === 'مرحبا! أنا بخير، كيف أقدر أساعدك؟';
+  })());
+ok('an ending with nothing said falls back to its status',
+  (() => {
+    const i = toItem(ev('completion.finished', {success: true, status: 'completed', terminal: true}));
+    return i?.kind === 'spoke' && i.text === 'completed';
+  })());
+ok('a stopped run reads as its reason, which is what the summary carries',
+  (() => {
+    const i = toItem(ev('completion.finished', {
+      success: false,
+      status: 'stopped',
+      terminal: true,
+      summary: 'stopped from the console'
+    }));
+    return i?.kind === 'spoke' && i.text === 'stopped from the console';
+  })());
+
 console.log(failed === 0 ? '\nall good.\n' : `\n${failed} failed.\n`);
 process.exit(failed === 0 ? 0 : 1);
