@@ -1,4 +1,5 @@
 import type {EngineEvent} from './adapter.js';
+import {makeCancellation} from './cancel.js';
 
 // ── The terminal's one door to the engine ────────────────────────────────────
 //
@@ -24,8 +25,24 @@ const DEFAULT_ENGINE =
 export type Engine = {
   /** Every execution event, already narrowed by the engine's own contract. */
   watch(handler: (event: EngineEvent) => void): () => void;
-  /** Submit a goal. Resolves when the engine has finished with it. */
-  submit(goal: string): Promise<{success: boolean; status: string}>;
+  /**
+   * Submit a goal. Resolves when the engine has finished with it.
+   *
+   * The caller names it: `GoalRequest.id` is honoured as given
+   * (main-brain.ts:263, `req.id || randomUUID()`), and a console that knows the
+   * id from the first millisecond can stop the goal before a single event has
+   * arrived — the window where a stop is worth most.
+   */
+  submit(goal: string, goalId: string): Promise<{success: boolean; status: string}>;
+  /**
+   * Stop a running goal at the engine's next boundary.
+   *
+   * Not an interrupt: see cancel.ts. The `stopped` line the reader sees comes
+   * from the engine's own `completion.finished`, not from this call — which is
+   * why this returns nothing and cannot fail. A goal that has already ended, or
+   * that never existed, is a mark nobody reads.
+   */
+  cancel(goalId: string): void;
   /**
    * Answer a question the engine stopped for.
    *
@@ -113,11 +130,20 @@ export async function openEngine(enginePath = DEFAULT_ENGINE): Promise<Engine | 
 
   try {
     const core = (await import(enginePath)) as {
-      ApplicationRuntime: {create(o: {config: unknown}): Promise<Record<string, unknown>>};
+      ApplicationRuntime: {
+        create(o: {config: unknown; middleware?: unknown[]}): Promise<Record<string, unknown>>;
+      };
       loadRuntimeConfigFromEnv(): unknown;
+      MiddlewareControlSignal: new (message: string) => Error;
     };
     const config = core.loadRuntimeConfigFromEnv();
-    const app = await core.ApplicationRuntime.create({config});
+    // The engine's own signal class, handed to the host's own middleware — the
+    // engine tests the thrown value with `instanceof`, so it has to be this one.
+    const cancellation = makeCancellation(core.MiddlewareControlSignal);
+    const app = await core.ApplicationRuntime.create({
+      config,
+      middleware: [cancellation.middleware]
+    });
 
     return {
       watch: handler =>
@@ -136,22 +162,42 @@ export async function openEngine(enginePath = DEFAULT_ENGINE): Promise<Engine | 
       // entry point and MainBrain's `submitGoal` is behind it. Checked rather
       // than assumed — the wrong name would have compiled, since the runtime is
       // reached through an index signature.
-      submit: async goal => {
-        const result = await (
-          app['executeGoal'] as (r: {goal: string}) => Promise<{success: boolean; status: string}>
-        )({goal});
-        return {success: result?.success ?? false, status: result?.status ?? 'unknown'};
+      // A cancelled goal REJECTS with the signal this console threw — the
+      // engine hands the host's own error back untouched (main-brain.ts:290),
+      // by design. It has already recorded `stopped` and published
+      // completion.finished before rethrowing, so the screen is told by the
+      // event; here the signal is simply absorbed by the one who threw it.
+      // Anything else still rejects, and the caller still sees it.
+      submit: async (goal, goalId) => {
+        try {
+          const result = await (
+            app['executeGoal'] as (r: {
+              goal: string;
+              id: string;
+            }) => Promise<{success: boolean; status: string}>
+          )({goal, id: goalId});
+          return {success: result?.success ?? false, status: result?.status ?? 'unknown'};
+        } catch (error) {
+          if (!cancellation.owns(error)) throw error;
+          return {success: false, status: 'stopped'};
+        }
       },
       answer: async (goalId, text) => {
         const context = app['context'] as {mainBrain: Record<string, unknown>};
-        const result = await (
-          context.mainBrain['answerClarification'] as (
-            g: string,
-            r: string
-          ) => Promise<{success: boolean; status: string}>
-        )(goalId, text);
-        return {success: result?.success ?? false, status: result?.status ?? 'unknown'};
+        try {
+          const result = await (
+            context.mainBrain['answerClarification'] as (
+              g: string,
+              r: string
+            ) => Promise<{success: boolean; status: string}>
+          )(goalId, text);
+          return {success: result?.success ?? false, status: result?.status ?? 'unknown'};
+        } catch (error) {
+          if (!cancellation.owns(error)) throw error;
+          return {success: false, status: 'stopped'};
+        }
       },
+      cancel: goalId => cancellation.cancel(goalId),
       shutdown: () => (app['shutdown'] as () => Promise<void>)()
     };
   } catch (error) {

@@ -89,6 +89,16 @@ export type State = {
   spinner: number;
   /** Whether captured output is unfolded. One switch, for everything. */
   open: boolean;
+  /**
+   * Whether a goal is running that Esc could stop.
+   *
+   * Content, not layout (rule 5): the footer offers the key only while there is
+   * something for it to do. It is told rather than derived, because "running"
+   * is the console's own fact — it holds the goal id it submitted — and no item
+   * in the log carries it: a goal that has finished and one still working leave
+   * the same trail behind them.
+   */
+  stoppable: boolean;
 };
 
 export const emptyState = (): State => ({
@@ -97,7 +107,8 @@ export const emptyState = (): State => ({
   caret: 0,
   view: START,
   spinner: 0,
-  open: false
+  open: false,
+  stoppable: false
 });
 
 const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -283,12 +294,15 @@ function footerRows(state: State, width: number, below: number): string[] {
       : prompt + colour.ink + before + INVERSE + at + RESET + colour.ink + after + RESET;
 
   const folded = state.items.some(i => i.kind === 'did' && i.output.length > 0);
+  // Esc is offered only while something is running — the one key here that is
+  // sometimes meaningless, and a key that does nothing should not be advertised.
+  const quit = state.stoppable ? 'Esc stops · Ctrl+C quit' : 'Ctrl+C quit';
   const keys =
     below > 0
-      ? `${below} row${below === 1 ? '' : 's'} below · PgDn follows again · Ctrl+C quit`
+      ? `${below} row${below === 1 ? '' : 's'} below · PgDn follows again · ${quit}`
       : folded
-        ? `Tab ${state.open ? 'folds' : 'unfolds'} output · PgUp/PgDn scroll · Enter sends · Ctrl+C quit`
-        : 'PgUp/PgDn scroll · Home/End jump · Enter sends · Ctrl+C quit';
+        ? `Tab ${state.open ? 'folds' : 'unfolds'} output · PgUp/PgDn scroll · Enter sends · ${quit}`
+        : `PgUp/PgDn scroll · Home/End jump · Enter sends · ${quit}`;
 
   return [fitStyled(line, width), tint('  ' + fit(keys, Math.max(1, width - 2)), colour.dim)];
 }

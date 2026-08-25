@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {randomUUID} from 'node:crypto';
 import {toItem} from './adapter.js';
 import {draw, emptyState, scrollBy, type Item, type State} from './console.js';
 import {isFailure, openEngine, type Engine} from './engine.js';
@@ -32,6 +33,31 @@ let engine: Engine | null = null;
 let engineOpening: Promise<void> | null = null;
 
 const add = (item: Item) => edit(s => ({...s, items: [...s.items, item]}));
+
+// ── What is running, and can therefore be stopped ────────────────────────────
+//
+// The console names the goal itself (`randomUUID`, handed to the engine as
+// `id`) instead of waiting to learn its id from an event. That is what makes
+// Esc work in the window where it matters most: the seconds before the first
+// wave, when the engine is planning and there is nothing on screen yet to read
+// an id from.
+//
+// Newest last, and Esc takes the last: nothing stops a person typing a second
+// goal while the first runs, and the one they mean is the one they just sent.
+// Ids are removed where they were added — when the promise that is running the
+// goal settles — so this can never claim something is running after it ended.
+const running: string[] = [];
+
+function startedRunning(goalId: string): void {
+  running.push(goalId);
+  edit(s => ({...s, stoppable: true}));
+}
+
+function stoppedRunning(goalId: string): void {
+  const at = running.lastIndexOf(goalId);
+  if (at !== -1) running.splice(at, 1);
+  edit(s => ({...s, stoppable: running.length > 0}));
+}
 
 const show = () => {
   if (!opening.done) {
@@ -72,6 +98,8 @@ function key(k: Key) {
   }
 
   switch (k.name) {
+    case 'escape':
+      return stopRunningGoal();
     case 'pageUp':
       return edit(s => scrollBy(s, {kind: 'page', delta: -1}));
     case 'pageDown':
@@ -164,13 +192,20 @@ async function reply(goalId: string, questionId: string, text: string): Promise<
     add({kind: 'noted', id: `noted-${Date.now()}`, lines: ['no engine — the answer went nowhere']});
     return;
   }
-  await engine.answer(goalId, text).catch((err: unknown) => {
-    add({
-      kind: 'noted',
-      id: `noted-${Date.now()}`,
-      lines: [`the answer was not accepted: ${err instanceof Error ? err.message : String(err)}`]
-    });
-  });
+  // The same goal, running again — answering a question resumes the execution
+  // that was paused, under the id it already had (main-brain.ts: one beginning,
+  // one ending). So Esc can stop it, exactly as it could before the question.
+  startedRunning(goalId);
+  await engine
+    .answer(goalId, text)
+    .catch((err: unknown) => {
+      add({
+        kind: 'noted',
+        id: `noted-${Date.now()}`,
+        lines: [`the answer was not accepted: ${err instanceof Error ? err.message : String(err)}`]
+      });
+    })
+    .finally(() => stoppedRunning(goalId));
 }
 
 /**
@@ -189,12 +224,46 @@ async function ask(goal: string): Promise<void> {
     add({kind: 'noted', id: `noted-${Date.now()}`, lines: ['no engine — nothing to run this against']});
     return;
   }
-  void engine.submit(goal).catch((err: unknown) => {
-    add({
-      kind: 'noted',
-      id: `noted-${Date.now()}`,
-      lines: [`the goal ended badly: ${err instanceof Error ? err.message : String(err)}`]
-    });
+  const goalId = randomUUID();
+  startedRunning(goalId);
+  void engine
+    .submit(goal, goalId)
+    .catch((err: unknown) => {
+      add({
+        kind: 'noted',
+        id: `noted-${Date.now()}`,
+        lines: [`the goal ended badly: ${err instanceof Error ? err.message : String(err)}`]
+      });
+    })
+    // Including the pause for a question: the engine returns
+    // `awaiting_clarification` and this execution is over until an answer
+    // restarts it (reply() marks it running again). Nothing is running in the
+    // meantime, and Esc has nothing to stop — which is the truth on screen too,
+    // since the question is what the reader is looking at.
+    .finally(() => stoppedRunning(goalId));
+}
+
+/**
+ * Stop the goal the person means: the last one they sent that is still going.
+ *
+ * The console says only that it asked. Whether the run ends, and when, is the
+ * engine's to report — it stops at its next boundary and publishes
+ * `completion.finished`, which arrives through `watch` like any other event and
+ * renders as `stopped`. Saying "stopped" here would be the console announcing
+ * something it does not know yet.
+ *
+ * With nothing running this does nothing at all — no message, no beep. Esc is
+ * not this console's quit key, and a person pressing it out of habit should not
+ * be answered by a log entry.
+ */
+function stopRunningGoal(): void {
+  const goalId = running[running.length - 1];
+  if (goalId === undefined || !engine) return;
+  engine.cancel(goalId);
+  add({
+    kind: 'noted',
+    id: `noted-${Date.now()}`,
+    lines: ['stopping — the engine finishes the work already in flight first']
   });
 }
 
