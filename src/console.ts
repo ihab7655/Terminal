@@ -37,6 +37,26 @@ export type ItemState = 'ok' | 'failed' | 'running';
 export type Item =
   /** What the person asked for. The anchor of the whole log. */
   | {kind: 'said'; id: string; text: string}
+  /**
+   * What the engine is doing RIGHT NOW — and only now.
+   *
+   * Derived from the events that describe a phase rather than a result:
+   * `goal.started`, `classification.completed`, `planning.started`/`.finished`,
+   * `execution.wave.started`/`.finished`, `worker.spawned`, `checkpoint.saved`.
+   * Eight events, one line: each replaces the last instead of appending, because
+   * a reader wants to know where the engine is, not read the eight steps it took
+   * to get there. `did` accumulates; this does not.
+   */
+  | {kind: 'phase'; id: string; text: string; detail?: string}
+  /**
+   * A question that stopped the goal, and the answer if one was given.
+   *
+   * `clarification.requested` does not merely inform — main-brain.ts:407 returns
+   * `awaiting_clarification` and the execution ends there. Rendering it as one
+   * more grey note would hide the fact that nothing is running and the engine is
+   * waiting on the person.
+   */
+  | {kind: 'asked'; id: string; question: string; answer?: string}
   /** The engine's own voice. Prose, unlabelled. */
   | {kind: 'spoke'; id: string; text: string}
   /** Short findings under what was just said. */
@@ -156,6 +176,33 @@ function itemRows(item: Item, state: State, width: number, verbs: number): strin
     return rows;
   }
 
+  if (item.kind === 'phase') {
+    // One line, replaced in place. The mark is the spinner while it is the
+    // current phase — the engine is between events, which is exactly when a
+    // reader has nothing else to look at.
+    const left = INDENT + MARK;
+    const head = ' '.repeat(INDENT) + tint(spinnerFrame(state.spinner), colour.cyanSoft) + ' ';
+    const body = fit(item.detail ? `${item.text} · ${item.detail}` : item.text, Math.max(8, width - left));
+    return [head + tint(body, colour.muted)];
+  }
+
+  if (item.kind === 'asked') {
+    // The engine stopped and is waiting on the person, so this reads as a
+    // question and not as another grey line. Answered, it keeps the answer
+    // beneath it — the pair is one exchange.
+    const left = INDENT + MARK;
+    const rows: string[] = [];
+    wrap(item.question, Math.max(8, width - left - 2)).forEach((line, i) =>
+      rows.push(
+        ' '.repeat(INDENT) + tint(i === 0 ? '? ' : '  ', colour.amber, true) + tint(line, colour.ink)
+      )
+    );
+    for (const line of item.answer ? wrap(item.answer, Math.max(8, width - left - 2)) : []) {
+      rows.push(' '.repeat(left) + tint('› ', colour.amber) + tint(line, colour.cyanSoft));
+    }
+    return rows;
+  }
+
   const mark = markOf(item, state.spinner);
   const left = INDENT + MARK + verbs + 1;
   const body = Math.max(8, width - left);
@@ -181,10 +228,27 @@ export function contentRows(state: State, width: number): string[] {
   const rows: string[] = [];
   let previous: Item['kind'] | null = null;
 
-  for (const item of state.items) {
-    // Consecutive actions are one block; everything else gets air around it.
-    // The rule is in the content, not in a spacing table.
-    const together = item.kind === 'did' && previous === 'did';
+  // A phase describes where the engine IS, so only the last one is true. Eight
+  // engine events map to it (goal.started, classification.completed, planning
+  // started/finished, wave started/finished, worker.spawned, checkpoint.saved)
+  // and rendering all of them would bury the session in its own footsteps.
+  //
+  // Dropped here rather than at the door: an event that arrived is a fact, and
+  // the record keeps it. What a phase is worth is a display decision, and this
+  // is where display decisions live (rule 5 — content decides layout; this is
+  // content deciding what content means).
+  const lastPhase = state.items.map(i => i.kind === 'phase').lastIndexOf(true);
+
+  for (const [index, item] of state.items.entries()) {
+    if (item.kind === 'phase' && index !== lastPhase) continue;
+    // Consecutive items OF THE SAME KIND are one block; a change of kind gets
+    // air around it. The rule is in the content, not in a spacing table.
+    //
+    // It used to apply to `did` alone, and drawing a real session showed why
+    // that is not enough: a capability journey arrives as five consecutive
+    // `noted` lines — the gap found, the catalog declining, the build, the
+    // adoption — and a blank line between each broke one story into scraps.
+    const together = item.kind === previous && (item.kind === 'did' || item.kind === 'noted');
     if (rows.length > 0 && !together) rows.push('');
     rows.push(...itemRows(item, state, width, verbs));
     previous = item.kind;
