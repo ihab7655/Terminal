@@ -35,6 +35,11 @@ export type EngineEvent = {
   readonly payload: Record<string, unknown>;
 };
 
+/** When a phase began, so the frame can say how long it has been going on.
+ *  Read here, at the one place an event becomes an item, rather than while
+ *  drawing — a frame must stay a pure function of state. */
+const now = () => Date.now();
+
 const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
 const num = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined);
 
@@ -55,11 +60,11 @@ export function toItem(event: EngineEvent): Item | undefined {
   switch (event.eventType) {
     // ── where the engine is ────────────────────────────────────────────────
     case 'goal.started':
-      return {kind: 'phase', id: id('phase'), text: 'starting'};
+      return {kind: 'phase', since: now(), id: id('phase'), text: 'starting'};
     case 'classification.completed':
-      return {kind: 'phase', id: id('phase'), text: 'reading the request'};
+      return {kind: 'phase', since: now(), id: id('phase'), text: 'reading the request'};
     case 'planning.started':
-      return {kind: 'phase', id: id('phase'), text: 'planning'};
+      return {kind: 'phase', since: now(), id: id('phase'), text: 'planning'};
     case 'planning.finished': {
       const waves = num(p['wavesCount']);
       return {
@@ -79,13 +84,13 @@ export function toItem(event: EngineEvent): Item | undefined {
       };
     }
     case 'execution.wave.finished':
-      return {kind: 'phase', id: id('phase'), text: 'wave finished'};
+      return {kind: 'phase', since: now(), id: id('phase'), text: 'wave finished'};
     case 'worker.spawned':
-      return {kind: 'phase', id: id('phase'), text: 'working'};
+      return {kind: 'phase', since: now(), id: id('phase'), text: 'working'};
     case 'checkpoint.saved':
       // Real, and it happens between the phases above — as its own line it would
       // only flicker. Kept as a phase so it is not silently dropped.
-      return {kind: 'phase', id: id('phase'), text: 'saved a checkpoint'};
+      return {kind: 'phase', since: now(), id: id('phase'), text: 'saved a checkpoint'};
 
     // ── what it did, and how it went ───────────────────────────────────────
     case 'tool.called': {
@@ -184,7 +189,7 @@ export function toItem(event: EngineEvent): Item | undefined {
         return {kind: 'noted', id: id('noted'), lines: [`missing a capability: ${text ?? ''}`.trim()]};
       }
       if (to === 'ACQUIRING') {
-        return {kind: 'phase', id: id('phase'), text: 'building a capability it does not have'};
+        return {kind: 'phase', since: now(), id: id('phase'), text: 'building a capability it does not have'};
       }
       if (to === 'ABANDONED') {
         return {

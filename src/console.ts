@@ -47,7 +47,7 @@ export type Item =
    * a reader wants to know where the engine is, not read the eight steps it took
    * to get there. `did` accumulates; this does not.
    */
-  | {kind: 'phase'; id: string; text: string; detail?: string}
+  | {kind: 'phase'; id: string; text: string; detail?: string; since?: number}
   /**
    * A question that stopped the goal, and the answer if one was given.
    *
@@ -87,6 +87,15 @@ export type State = {
   caret: number;
   view: Viewport;
   spinner: number;
+  /**
+   * The clock the frame is drawn against, in ms.
+   *
+   * Held in state rather than read from `Date.now()` while drawing, so a frame
+   * stays a pure function of state — the property every test here depends on.
+   * It is advanced by the same tick that turns the spinner, which is exactly
+   * when a duration on screen could have changed.
+   */
+  now: number;
   /** Whether captured output is unfolded. One switch, for everything. */
   open: boolean;
   /**
@@ -107,12 +116,41 @@ export const emptyState = (): State => ({
   caret: 0,
   view: START,
   spinner: 0,
+  now: Date.now(),
   open: false,
   stoppable: false
 });
 
 const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 export const spinnerFrame = (n: number) => SPINNER[n % SPINNER.length]!;
+
+/**
+ * The phase still worth drawing, or -1.
+ *
+ * A phase is only true while the engine is between events. Once it has spoken
+ * — an ending, a question — the phase is over, and a spinner still turning
+ * beside it claims work that stopped. Drawn against a real engine, "⠋ planning"
+ * sat under a finished goal.
+ */
+function livePhaseIndex(items: readonly Item[]): number {
+  const lastPhase = items.map(i => i.kind === 'phase').lastIndexOf(true);
+  if (lastPhase === -1) return -1;
+  const endedAfter = items.map(i => i.kind === 'spoke' || i.kind === 'asked').lastIndexOf(true);
+  return endedAfter > lastPhase ? -1 : lastPhase;
+}
+
+/**
+ * Is anything on screen carrying a turning mark right now?
+ *
+ * The clock that advances the spinner asks this, so that "what turns" is
+ * decided once, here, beside the drawing that turns it. It used to be a second
+ * opinion in index.ts — `some(i => i.kind === 'did' && i.state === 'running')`
+ * — which left out the phase line entirely. The result was the console at its
+ * least reassuring: while the engine planned, for over a minute, the mark
+ * beside "planning" was frozen and the screen looked hung.
+ */
+export const anythingTurning = (items: readonly Item[]): boolean =>
+  livePhaseIndex(items) !== -1 || items.some(i => i.kind === 'did' && i.state === 'running');
 
 const INDENT = 2;
 const MARK = 2;          // a state mark and the space after it
@@ -201,7 +239,16 @@ function itemRows(item: Item, state: State, width: number, verbs: number): strin
     // reader has nothing else to look at.
     const left = INDENT + MARK;
     const head = ' '.repeat(INDENT) + tint(spinnerFrame(state.spinner), colour.cyanSoft) + ' ';
-    const body = fit(item.detail ? `${item.text} · ${item.detail}` : item.text, Math.max(8, width - left));
+    // HOW LONG THIS HAS BEEN GOING ON, once it has been going on long enough to
+    // wonder. Planning a real goal runs past a minute, and a turning mark alone
+    // says "not frozen" without saying "still working, and this is how long".
+    // Under the threshold nothing is shown: a duration that appears beside every
+    // passing phase is noise, and it would flicker on and off as fast as the
+    // engine moves between them.
+    const seconds = item.since === undefined ? 0 : Math.floor((state.now - item.since) / 1000);
+    const elapsed = seconds >= 3 ? `${seconds}s` : undefined;
+    const detail = [item.detail, elapsed].filter(Boolean).join(' · ');
+    const body = fit(detail ? `${item.text} · ${detail}` : item.text, Math.max(8, width - left));
     return [head + tint(body, colour.muted)];
   }
 
@@ -256,13 +303,8 @@ export function contentRows(state: State, width: number): string[] {
   // the record keeps it. What a phase is worth is a display decision, and this
   // is where display decisions live (rule 5 — content decides layout; this is
   // content deciding what content means).
-  const lastPhase = state.items.map(i => i.kind === 'phase').lastIndexOf(true);
-  // A phase is only true while the engine is between events. Once it has
-  // spoken — an ending, a question — the phase is over, and a spinner still
-  // turning beside it claims work that stopped. Drawn against a real engine,
-  // "⠋ planning" sat under a finished goal.
-  const endedAfter = state.items.map(i => i.kind === 'spoke' || i.kind === 'asked').lastIndexOf(true);
-  const phaseIsStale = endedAfter > lastPhase;
+  const lastPhase = livePhaseIndex(state.items);
+  const phaseIsStale = lastPhase === -1;
 
   for (const [index, item] of state.items.entries()) {
     if (item.kind === 'phase' && (index !== lastPhase || phaseIsStale)) continue;
