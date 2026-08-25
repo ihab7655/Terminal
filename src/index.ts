@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import {randomUUID} from 'node:crypto';
 import {toItem} from './adapter.js';
-import {draw, emptyState, scrollBy, type Item, type State} from './console.js';
+import {anythingTurning, draw, emptyState, scrollBy, type Item, type State} from './console.js';
 import {isFailure, openEngine, type Engine} from './engine.js';
 import {onKey, type Key} from './keys.js';
 import {advance, openingRows, skipOpening, startOpening, TICK_MS, type Opening} from './opening.js';
@@ -31,6 +31,10 @@ let engine: Engine | null = null;
 // seconds in was told there was nothing to run it against while the engine was
 // on its way.
 let engineOpening: Promise<void> | null = null;
+// Set when there is an engine to open, and called once the opening has stopped
+// animating — see the comment at the assignment for why the timing matters.
+// Absent under DEMO, where there is no engine and nothing to wait for.
+let openEngineWhenTheOpeningIsOver: (() => void) | null = null;
 
 const add = (item: Item) => edit(s => ({...s, items: [...s.items, item]}));
 
@@ -93,6 +97,10 @@ function key(k: Key) {
     if (isRealKey(k)) {
       opening = skipOpening(opening);
       show();
+      // Drawn BEFORE the engine is woken, not after: waking blocks for over a
+      // second, and a person who just pressed a key should see that key land
+      // rather than watch a stale frame while nothing answers.
+      openingIsOver();
     }
     return;
   }
@@ -297,35 +305,63 @@ if (process.env['DEMO']) {
     playDemo(change => edit(s => ({...s, items: change(s.items)})))
   );
 } else {
-  // Opened after the screen is taken, so anything it prints on the way lands in
-  // the capture rather than on a frame. It answers in about a second and a half
-  // and the opening runs for nine, so it is ready before anyone can type.
-  engineOpening = openEngine().then(opened => {
-    if (isFailure(opened)) {
-      add({
-        kind: 'noted',
-        id: 'engine-failed',
-        lines: [`the engine did not open — ${opened.reason}`]
+  // WHY THE ENGINE IS NOT OPENED HERE, WHERE THE SCREEN IS TAKEN.
+  //
+  // Opening it blocks. Measured 2026-08-25 with a 10ms heartbeat: importing the
+  // engine costs ~956ms and building the runtime ~897ms, and the loop stops
+  // dead for **1560ms** inside that. At 70ms a frame, that is twenty-two frames
+  // of the opening that never draw — the dragon freezes mid-flight, and the
+  // first thing this console does is look broken.
+  //
+  // Nothing here can make an import cheap. What it can choose is WHEN to pay
+  // for it: the opening is the only part of this console that animates, so the
+  // engine is woken the moment the opening is over, against a still screen
+  // where a second and a half costs nobody a frame. A person who skips the
+  // opening pays it immediately, which is honest — they asked to get on with
+  // it — and they are told what the wait is for.
+  //
+  // The engine is ready well before anyone can type a goal either way.
+  openEngineWhenTheOpeningIsOver = () => {
+    // A note, not a phase: a phase carries a turning mark, and the loop is
+    // about to stop for a second and a half — a mark that cannot turn while the
+    // thing it describes is happening is worse than no mark. It also stays in
+    // the log afterwards, where it explains the one pause this console has.
+    add({kind: 'noted', id: 'waking', lines: ['waking the engine']});
+    engineOpening = openEngine().then(opened => {
+      if (isFailure(opened)) {
+        add({
+          kind: 'noted',
+          id: 'engine-failed',
+          lines: [`the engine did not open — ${opened.reason}`]
+        });
+        return;
+      }
+      engine = opened;
+      // Every execution event, through the adapter, in the order it arrived.
+      opened.watch(event => {
+        const item = toItem(event);
+        if (item) add(item);
       });
-      return;
-    }
-    engine = opened;
-    // Every execution event, through the adapter, in the order it arrived.
-    opened.watch(event => {
-      const item = toItem(event);
-      if (item) add(item);
     });
-  });
+  };
 }
 
 takeScreen();
 const stop = onKey(key);
 process.stdout.on('resize', onResize);
 
+/** The opening has stopped animating — by running out, or by being skipped. */
+function openingIsOver(): void {
+  const wake = openEngineWhenTheOpeningIsOver;
+  openEngineWhenTheOpeningIsOver = null;
+  wake?.();
+}
+
 const curtain = setInterval(() => {
   if (opening.done) {
     clearInterval(curtain);
     show();
+    openingIsOver();
     return;
   }
   opening = advance(opening);
@@ -336,10 +372,15 @@ curtain.unref();
 // The spinner turns only while something is genuinely in flight, and stops the
 // moment nothing is. A console that repaints on a timer burns a terminal's
 // night for no reason.
+//
+// What counts as "in flight" is console.ts's to answer, not this loop's: it
+// draws the marks, so it knows which ones turn. Asked here independently, the
+// answer left out the phase line — and the phase line is what a person watches
+// during the longest wait there is.
 const spin = setInterval(() => {
   if (!opening.done) return;
-  if (!state.items.some(i => i.kind === 'did' && i.state === 'running')) return;
-  edit(s => ({...s, spinner: s.spinner + 1}));
+  if (!anythingTurning(state.items)) return;
+  edit(s => ({...s, spinner: s.spinner + 1, now: Date.now()}));
 }, 90);
 spin.unref();
 
