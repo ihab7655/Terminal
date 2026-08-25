@@ -97,7 +97,13 @@ console.log('\nthe code the engine wrote');
 
   const edit = withItems([wrote('e', [{sign: '-', text: 'old'}, {sign: '+', text: 'new'}])]);
   const editFolded = contentRowsWithOwners(edit, 60).rows.join('\n').replace(/\u001B\[[0-9;]*m/g, '');
-  ok('an edit counts both sides', editFolded.includes('+1') && editFolded.includes('-1'), editFolded);
+  // "+2 -1 lines" does not read: the unit lands on the second number and says
+  // something untrue about the first.
+  ok('an edit counts both sides and lets the numbers speak for themselves',
+    editFolded.includes('+1 -1') && !editFolded.includes('-1 line'), editFolded);
+  ok('a removal on its own still says its unit',
+    contentRowsWithOwners(withItems([wrote('r', [{sign: '-', text: 'gone'}])]), 60)
+      .rows.join('').replace(/\u001B\[[0-9;]*m/g, '').includes('-1 line'));
   ok('one changed line is a line, not lines',
     contentRowsWithOwners(withItems([wrote('s', [{sign: '+', text: 'x'}])]), 60)
       .rows.join('').replace(/\u001B\[[0-9;]*m/g, '').includes('+1 line'));

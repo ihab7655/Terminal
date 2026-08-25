@@ -244,11 +244,26 @@ function changeRows(
     // meaningful whole, which is what opening it is for.
     const added = changes.filter(c => c.sign === '+').length;
     const removed = changes.length - added;
-    const parts = [
-      added > 0 ? tint(`+${added}`, colour.added) : '',
-      removed > 0 ? tint(`-${removed}`, colour.removed) : ''
-    ].filter(Boolean);
-    return [' '.repeat(left) + parts.join(' ') + tint(added + removed === 1 ? ' line' : ' lines', colour.dim)];
+    // "+8 lines" reads; "+2 -1 lines" does not — the word lands on the second
+    // number and says something untrue about the first. A write says its unit,
+    // an edit says both sides and lets them speak for themselves.
+    if (removed === 0) {
+      return [
+        ' '.repeat(left) +
+          tint(`+${added}`, colour.added) +
+          tint(added === 1 ? ' line' : ' lines', colour.dim)
+      ];
+    }
+    if (added === 0) {
+      return [
+        ' '.repeat(left) +
+          tint(`-${removed}`, colour.removed) +
+          tint(removed === 1 ? ' line' : ' lines', colour.dim)
+      ];
+    }
+    return [
+      ' '.repeat(left) + tint(`+${added}`, colour.added) + ' ' + tint(`-${removed}`, colour.removed)
+    ];
   }
 
   // Open: the sign is column one of the line, where it is scanned down the page
