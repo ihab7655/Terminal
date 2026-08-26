@@ -170,56 +170,16 @@ function key(k: Key) {
       const text = state.input.trim();
       if (text === '') return;
 
-      // An unanswered question outranks a new goal: the engine is stopped and
-      // waiting on this person, so what they type next is the answer. Sending
-      // it as a fresh goal instead would leave the first one hanging forever
-      // and start a second — the console deciding, wrongly, that the question
-      // was rhetorical.
-      const waiting = pendingQuestion(state);
-
-      // NOTHING IS SENT FROM INSIDE `edit`, AND THAT IS NOT A STYLE CHOICE.
+      // ONE WAY IN. The console used to read its own rendered items to decide
+      // whether a typed line was an answer to a pending question, and call a
+      // different engine method if it was. That was cognition living in a host:
+      // it decided what a message MEANT.
       //
-      // `edit(change)` assigns `state = change(state)`. A send called from
-      // within `change` that writes state SYNCHRONOUSLY — as reply() does, to
-      // put the answer under its question before awaiting anything — has its
-      // write overwritten the instant `change` returns, because the object
-      // `change` returns was derived from the state as it was BEFORE the
-      // nested write.
-      //
-      // Measured 2026-08-25 against the real engine: the answer was typed, the
-      // question stayed bare on screen, and the engine resumed as if nothing
-      // had been shown. The exchange was one item short of being readable, and
-      // nothing in the log said why. ask() hides the same hazard behind its
-      // first `await` — until the door has already failed, where its "no
-      // engine" line is written synchronously too.
-      //
-      // So: read state, write state, then send. One write per keystroke.
-      edit(s =>
-        waiting
-          ? {...s, history: remember(s.history, text), input: '', caret: 0}
-          : {
-              ...s,
-              items: [...s.items, {kind: 'said', id: `said-${s.items.length}`, text}],
-              history: remember(s.history, text),
-              input: '',
-              caret: 0
-            }
-      );
-
-      // SOMETHING MOVES THE MOMENT A LINE IS SENT.
-      //
-      // The engine's first event can be a minute away — classification and
-      // planning are LLM calls — and until this, nothing on screen said the
-      // console had even heard. Answering a question was the worst of it: the
-      // question sat there unchanged while the engine worked, and the only
-      // honest reading of that screen was that it had frozen.
-      //
-      // A phase, not a note, because a phase carries the turning mark and is
-      // replaced by the engine's own first phase the instant one arrives.
-      add({kind: 'phase', id: `sent-${Date.now()}`, text: 'thinking', since: Date.now()});
-
-      if (waiting) void reply(waiting.goalId, waiting.id, text);
-      else void ask(text);
+      // The engine has no clarification state any more — it asks by answering,
+      // the goal ends, and the next message arrives with the exchange above it.
+      // So there is nothing here to route: everything a person types is a
+      // message, and the engine reads it in its session.
+      void ask(text);
       return;
     }
     default:
@@ -232,50 +192,6 @@ function key(k: Key) {
     input: s.input.slice(0, s.caret) + k.text + s.input.slice(s.caret),
     caret: s.caret + k.text.length
   }));
-}
-
-/** The last question with no answer, if the engine is waiting on one. */
-function pendingQuestion(s: State): {id: string; goalId: string} | undefined {
-  for (let i = s.items.length - 1; i >= 0; i--) {
-    const item = s.items[i]!;
-    if (item.kind !== 'asked') continue;
-    return item.answer === undefined ? {id: item.id, goalId: item.goalId} : undefined;
-  }
-  return undefined;
-}
-
-/**
- * Answer the question the engine stopped for, and let it carry on.
- *
- * The answer is written onto the question itself rather than added as a new
- * item: they are one exchange, and a reader scrolling back should find the
- * reply under the question that prompted it, not somewhere further down.
- */
-async function reply(goalId: string, questionId: string, text: string): Promise<void> {
-  edit(s => ({
-    ...s,
-    items: s.items.map(i => (i.id === questionId && i.kind === 'asked' ? {...i, answer: text} : i))
-  }));
-
-  if (engineOpening) await engineOpening;
-  if (!engine) {
-    add({kind: 'noted', id: `noted-${Date.now()}`, lines: ['no engine — the answer went nowhere']});
-    return;
-  }
-  // The same goal, running again — answering a question resumes the execution
-  // that was paused, under the id it already had (main-brain.ts: one beginning,
-  // one ending). So Esc can stop it, exactly as it could before the question.
-  startedRunning(goalId);
-  await engine
-    .answer(goalId, text)
-    .catch((err: unknown) => {
-      add({
-        kind: 'noted',
-        id: `noted-${Date.now()}`,
-        lines: [`the answer was not accepted: ${err instanceof Error ? err.message : String(err)}`]
-      });
-    })
-    .finally(() => stoppedRunning(goalId));
 }
 
 /**
@@ -305,11 +221,10 @@ async function ask(goal: string): Promise<void> {
         lines: [`the goal ended badly: ${err instanceof Error ? err.message : String(err)}`]
       });
     })
-    // Including the pause for a question: the engine returns
-    // `awaiting_clarification` and this execution is over until an answer
-    // restarts it (reply() marks it running again). Nothing is running in the
-    // meantime, and Esc has nothing to stop — which is the truth on screen too,
-    // since the question is what the reader is looking at.
+    // Including a goal that ended by asking something: that IS an ending now,
+    // not a pause. Nothing is running afterwards, Esc has nothing to stop, and
+    // the answer the person types next is a new goal that carries the exchange
+    // with it.
     .finally(() => stoppedRunning(goalId));
 }
 

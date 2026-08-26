@@ -1,3 +1,4 @@
+import {actionsOf, isRunning, sentenceOf, type Action} from './action.js';
 import {NO_HISTORY, type History} from './history.js';
 import {RAIL_ROWS, rail} from './rail.js';
 import {paint, screenSize} from './screen.js';
@@ -53,23 +54,6 @@ export type Item =
    * to get there. `did` accumulates; this does not.
    */
   | {kind: 'phase'; id: string; text: string; detail?: string; since?: number}
-  /**
-   * A question that stopped the goal, and the answer if one was given.
-   *
-   * `clarification.requested` does not merely inform — main-brain.ts:407 returns
-   * `awaiting_clarification` and the execution ends there. Rendering it as one
-   * more grey note would hide the fact that nothing is running and the engine is
-   * waiting on the person.
-   */
-  | {
-      kind: 'asked';
-      id: string;
-      question: string;
-      /** Which execution is waiting. ADR-011 puts it on every event's envelope,
-       *  and without it an answer has nowhere to go. */
-      goalId: string;
-      answer?: string;
-    }
   /** The engine's own voice. Prose, unlabelled. */
   | {kind: 'spoke'; id: string; text: string}
   /** Short findings under what was just said. */
@@ -162,7 +146,7 @@ export const spinnerFrame = (n: number) => SPINNER[n % SPINNER.length]!;
 function livePhaseIndex(items: readonly Item[]): number {
   const lastPhase = items.map(i => i.kind === 'phase').lastIndexOf(true);
   if (lastPhase === -1) return -1;
-  const endedAfter = items.map(i => i.kind === 'spoke' || i.kind === 'asked').lastIndexOf(true);
+  const endedAfter = items.map(i => i.kind === 'spoke').lastIndexOf(true);
   return endedAfter > lastPhase ? -1 : lastPhase;
 }
 
@@ -332,23 +316,6 @@ function itemRows(item: Item, state: State, width: number, verbs: number): strin
     return [head + tint(body, colour.muted)];
   }
 
-  if (item.kind === 'asked') {
-    // The engine stopped and is waiting on the person, so this reads as a
-    // question and not as another grey line. Answered, it keeps the answer
-    // beneath it — the pair is one exchange.
-    const left = INDENT + MARK;
-    const rows: string[] = [];
-    wrap(item.question, Math.max(8, width - left - 2)).forEach((line, i) =>
-      rows.push(
-        ' '.repeat(INDENT) + tint(i === 0 ? '? ' : '  ', colour.amber, true) + tint(line, colour.ink)
-      )
-    );
-    for (const line of item.answer ? wrap(item.answer, Math.max(8, width - left - 2)) : []) {
-      rows.push(' '.repeat(left) + tint('› ', colour.amber) + tint(line, colour.cyanSoft));
-    }
-    return rows;
-  }
-
   const mark = markOf(item, state.spinner);
   const left = INDENT + MARK + verbs + 1;
   const body = Math.max(8, width - left);
@@ -356,19 +323,92 @@ function itemRows(item: Item, state: State, width: number, verbs: number): strin
 
   wrap(item.object, body).forEach((line, i) =>
     rows.push(
-      ' '.repeat(INDENT) +
-        tint(i === 0 ? mark.ch : ' ', mark.tone, true) +
-        ' ' +
-        tint(i === 0 ? cell(item.verb, verbs) : ' '.repeat(verbs), colour.muted) +
-        ' ' +
-        tint(line, objectTone)
+      i === 0
+        ? ' '.repeat(INDENT) +
+          mark +
+          ' ' +
+          tint(cell(item.verb, verbs), colour.muted) +
+          ' ' +
+          tint(line, objectTone)
+        : ' '.repeat(left) + tint(line, objectTone)
     )
   );
+
   rows.push(...outputRows(item, state.open.has(item.id), left, width));
   return rows;
 }
 
-/** Every row of the session, at this width. The viewport decides what is seen. */
+// ── A run of tool calls ──────────────────────────────────────────────────────
+//
+// Folded, it is one sentence: `Ran 3 shell commands`. Opened, each call is
+// named as it was made and everything it printed hangs under it:
+//
+//   ● Bash(cat /home/spark/notes)
+//     ⎿  hello
+//
+// The shape is Claude Code's, deliberately — it is what he asked for, and it is
+// the arrangement that answers both readings of a transcript: the sentence
+// while scanning, the call itself when you stop on one.
+const OPEN_MARK = '●';
+const OUTPUT_MARK = '⎿';
+
+/** A tool name as a person says it: `write_file` → `Write`. */
+const titleOf = (verb: string) =>
+  verb
+    .split('_')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+
+function actionRows(action: Action, state: State, width: number): string[] {
+  const open = action.ids.some(id => state.open.has(id));
+  const room = Math.max(8, width - INDENT - MARK);
+
+  if (!open) {
+    // The sentence carries the run's state in its mark: turning while a call is
+    // still going, a cross when one of them failed.
+    const failed = action.items.some(i => i.state === 'failed');
+    const mark = isRunning(action)
+      ? tint(spinnerFrame(state.spinner), colour.cyanSoft)
+      : failed
+        ? tint('✕', colour.red)
+        : tint('●', colour.cyanSoft);
+    return [
+      ' '.repeat(INDENT) + mark + ' ' + tint(fit(sentenceOf(action), room), colour.ink)
+    ];
+  }
+
+  const rows: string[] = [];
+  for (const item of action.items) {
+    const mark =
+      item.state === 'running'
+        ? tint(spinnerFrame(state.spinner), colour.cyanSoft)
+        : item.state === 'failed'
+          ? tint(OPEN_MARK, colour.red)
+          : tint(OPEN_MARK, colour.cyanSoft);
+    // The call, written as it was made: Bash(cat /home/spark/notes).
+    const call = `${titleOf(item.verb)}(${item.object})`;
+    wrap(call, room).forEach((line, i) =>
+      rows.push(' '.repeat(INDENT) + (i === 0 ? mark + ' ' : '  ') + tint(line, colour.ink))
+    );
+
+    const detail = [
+      ...(item.changes ?? []).map(c => ({text: c.sign + ' ' + c.text, tone: c.sign === '+' ? colour.added : colour.removed})),
+      ...item.output.map(line => ({text: line, tone: item.state === 'failed' ? colour.red : colour.muted}))
+    ];
+    // Hangs under the call rather than under the mark, and the corner is drawn
+    // once — the rest is aligned to it, so the block reads as one thing.
+    const hang = INDENT + 2;
+    detail.forEach((line, i) =>
+      rows.push(
+        ' '.repeat(hang) +
+          (i === 0 ? tint(OUTPUT_MARK + '  ', colour.dim) : '   ') +
+          tint(fit(line.text, Math.max(4, width - hang - 3)), line.tone)
+      )
+    );
+  }
+  return rows;
+}
+
 export function contentRows(state: State, width: number): string[] {
   return contentRowsWithOwners(state, width).rows;
 }
@@ -401,16 +441,43 @@ export function contentRowsWithOwners(
   const lastPhase = livePhaseIndex(state.items);
   const phaseIsStale = lastPhase === -1;
 
+  // A RUN OF TOOL CALLS IS ONE THING (action.ts): consecutive calls to the same
+  // tool are collected and drawn as a sentence, opened as the calls themselves.
+  // Everything else is drawn as itself, in the order it arrived.
+  const pending: Extract<Item, {kind: 'did'}>[] = [];
+
+  const flushActions = () => {
+    for (const action of actionsOf(pending)) {
+      if (rows.length > 0 && previous !== 'did') {
+        rows.push('');
+        owners.push(undefined);
+      }
+      const drawn = actionRows(action, state, width);
+      rows.push(...drawn);
+      // Every row of a run belongs to the run: clicking any of them opens or
+      // closes the whole thing, which is what a person means by clicking a line
+      // of it.
+      for (let n = 0; n < drawn.length; n++) owners.push(action.ids[0]);
+      previous = 'did';
+    }
+    pending.length = 0;
+  };
+
   for (const [index, item] of state.items.entries()) {
     if (item.kind === 'phase' && (index !== lastPhase || phaseIsStale)) continue;
+    if (item.kind === 'did') {
+      pending.push(item);
+      continue;
+    }
+    flushActions();
     // Consecutive items OF THE SAME KIND are one block; a change of kind gets
     // air around it. The rule is in the content, not in a spacing table.
     //
-    // It used to apply to `did` alone, and drawing a real session showed why
-    // that is not enough: a capability journey arrives as five consecutive
-    // `noted` lines — the gap found, the catalog declining, the build, the
-    // adoption — and a blank line between each broke one story into scraps.
-    const together = item.kind === previous && (item.kind === 'did' || item.kind === 'noted');
+    // Drawing a real session showed why it cannot be `did` alone: a capability
+    // journey arrives as five consecutive `noted` lines — the gap found, the
+    // catalog declining, the build, the adoption — and a blank line between
+    // each broke one story into scraps.
+    const together = item.kind === previous && item.kind === 'noted';
     if (rows.length > 0 && !together) {
       rows.push('');
       owners.push(undefined);
@@ -420,6 +487,7 @@ export function contentRowsWithOwners(
     for (let n = 0; n < drawn.length; n++) owners.push(item.id);
     previous = item.kind;
   }
+  flushActions();
   return {rows, owners};
 }
 
@@ -443,16 +511,32 @@ export function itemAtRow(state: State, row: number): string | undefined {
   return owners[start + inBody - 1];
 }
 
-/** Is there anything under this row to open — captured output, or a change? */
-const foldable = (item: Extract<Item, {kind: 'did'}>): boolean =>
-  item.output.length > 0 || (item.changes?.length ?? 0) > 0;
+/**
+ * Is there anything under this row to open?
+ *
+ * Always, now: a folded run is a SENTENCE — "Ran 3 shell commands" — and
+ * opening it shows the calls themselves, `● Bash(cat notes)`, whether or not
+ * any of them printed a word. Before the sentence existed, the row already
+ * showed the call and there was genuinely nothing more for a `write_file` to
+ * reveal; that is what made a click on it look broken.
+ */
+const foldable = (item: Extract<Item, {kind: 'did'}>): boolean => item.kind === 'did';
 
 /** Open a `did` item's detail, or close it. Anything else is left alone. */
 export function toggleOutput(state: State, itemId: string | undefined): State {
   const item = state.items.find(i => i.id === itemId);
-  if (!item || item.kind !== 'did' || !foldable(item)) return state;
+  if (!item || item.kind !== 'did') return state;
+  // The click landed on a row of a RUN, and a run opens as one: its rows are all
+  // owned by its first id, and every call in it follows.
+  const dids = state.items.filter((i): i is Extract<Item, {kind: 'did'}> => i.kind === 'did');
+  const action = actionsOf(dids).find(a => a.ids.includes(item.id));
+  if (!action) return state;
   const open = new Set(state.open);
-  if (!open.delete(item.id)) open.add(item.id);
+  const isOpen = action.ids.some(id => open.has(id));
+  for (const id of action.ids) {
+    if (isOpen) open.delete(id);
+    else open.add(id);
+  }
   return {...state, open};
 }
 
@@ -565,9 +649,11 @@ const identity = (state: State): string =>
  */
 function status(state: State): string {
   if (state.stoppable) return 'working';
-  const spoke = [...state.items].reverse().find(i => i.kind === 'spoke' || i.kind === 'asked');
-  if (spoke?.kind === 'asked' && spoke.answer === undefined) return 'waiting on you';
   if (state.items.some(i => i.kind === 'noted' && i.id === 'engine-failed')) return 'no engine';
+  // There is no 'waiting on you' any more. The engine has no paused state: when
+  // it needs something it says so and the goal ENDS, so the console is idle and
+  // the question is simply the last thing on screen. Claiming otherwise would be
+  // the console asserting a state the engine no longer has.
   return state.items.length === 0 ? 'ready' : 'idle';
 }
 

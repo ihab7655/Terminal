@@ -23,7 +23,6 @@ import type {Change, Item} from './console.js';
 //           execution.wave.started/.finished · worker.spawned · checkpoint.saved
 //   did     tool.called · worker.done
 //   spoke   completion.finished · goal.completed · goal.failed
-//   asked   clarification.requested · clarification.resolved
 //   noted   verification.completed · retry.* · need.transition
 //           capability.attempt · capability.evolution · directive.*
 
@@ -191,17 +190,10 @@ export function toItem(event: EngineEvent): Item | undefined {
       return {kind: 'spoke', id: id('spoke'), text: reason ?? 'the goal failed'};
     }
 
-    // ── a question that stopped the goal ───────────────────────────────────
-    case 'clarification.requested': {
-      const question = str(p['question']);
-      // The goal is the envelope's, not the payload's — it is what an answer is
-      // addressed to.
-      return question
-        ? {kind: 'asked', id: id('asked'), question, goalId: event.goalId}
-        : undefined;
-    }
+    // No `clarification.requested`. The engine has no clarification state: when
+    // it needs something from the person it says so in its answer, and that
+    // arrives as `completion.finished` like any other ending.
 
-    // ── stumble, and recovery ──────────────────────────────────────────────
     case 'verification.completed': {
       if (p['passed'] === true) return undefined; // a pass is the absence of news
       const reason = str(p['reason']);
@@ -290,7 +282,6 @@ export function toItem(event: EngineEvent): Item | undefined {
 
     default:
       // goal.completed (completion.finished already said it), worker.done,
-      // tool.args.normalized, clarification.resolved, retry.plan_changed and
       // directive.* — each either repeats something already shown or is the
       // engine's own bookkeeping. Silence is a decision, recorded here.
       return undefined;

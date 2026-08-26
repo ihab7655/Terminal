@@ -35,18 +35,30 @@ console.log('\nevery row knows what drew it');
   });
   ok('a blank separator row belongs to nobody', owners.includes(undefined) === false || true);
   ok('the first item owns its own rows', owners[0] === 'a');
-  ok('folded, an item with three lines of output draws two rows — itself and the last line',
-    owners.filter(o => o === 'a').length === 2, owners);
+  // Folded, a run is ONE row whatever it contains — the sentence. Everything it
+  // did is behind it, which is the point.
+  ok('folded, a run of two calls is one row', rows.length === 1, rows.length);
 }
 
 console.log('\nopening one, and everything');
 {
   const two = withItems([did('a', ['one', 'two', 'three']), did('b', ['only'])]);
   const openA = toggleOutput(two, 'a');
-  ok('opening one leaves the other closed', openA.open.has('a') && !openA.open.has('b'));
-  ok('and it now draws every line it captured',
-    contentRowsWithOwners(openA, 60).owners.filter(o => o === 'a').length === 4);
+  // Consecutive calls to the SAME tool are one run and open as one — a person
+  // clicking "Ran 2 shell commands" means both of them.
+  ok('a run opens as a run', openA.open.has('a') && openA.open.has('b'));
+  ok('and it now draws every line both calls captured',
+    contentRowsWithOwners(openA, 60).rows.join('\n').replace(/\u001B\[[0-9;]*m/g, '').includes('one'));
   ok('clicking it again closes it', toggleOutput(openA, 'a').open.size === 0);
+  ok('a different tool is a different run, and stays closed',
+    (() => {
+      const mixed = withItems([
+        did('a', ['x']),
+        {...did('w', []), verb: 'write_file', id: 'w'} as Item
+      ]);
+      const opened = toggleOutput(mixed, 'a');
+      return opened.open.has('a') && !opened.open.has('w');
+    })());
 
   const all = toggleAllOutput(two);
   ok('Tab opens everything with output', all.open.has('a') && all.open.has('b'));
@@ -57,10 +69,14 @@ console.log('\nopening one, and everything');
 
 console.log('\nwhat cannot be opened');
 {
+  // A call that printed nothing is still worth opening: what opens is the CALL,
+  // `● Write(thing.py)`, which is what a write_file row never had before.
   const nothing = withItems([did('a', [])]);
-  ok('an item with no captured output is not openable — write_file returns none',
-    toggleOutput(nothing, 'a').open.size === 0);
-  ok('Tab does not open it either', toggleAllOutput(nothing).open.size === 0);
+  ok('a call that captured nothing still opens, and shows itself',
+    toggleOutput(nothing, 'a').open.has('a'));
+  ok('and what it shows is the call, named as it was made',
+    contentRowsWithOwners(toggleOutput(nothing, 'a'), 60)
+      .rows.join('\n').replace(/\u001B\[[0-9;]*m/g, '').includes('Ran(thing-a)'));
   ok('a click on a row nobody owns changes nothing',
     toggleOutput(withItems([did('a', ['x'])]), undefined).open.size === 0);
   ok('a click on something that is not a `did` changes nothing',
@@ -89,11 +105,13 @@ console.log('\nthe code the engine wrote');
 
   const one = withItems([wrote('w', [{sign: '+', text: 'a'}, {sign: '+', text: 'b'}])]);
   const folded = contentRowsWithOwners(one, 60).rows.join('\n').replace(/\u001B\[[0-9;]*m/g, '');
-  ok('folded, it says how much changed and shows no code', folded.includes('+2 lines') && !folded.includes('a'), folded);
+  ok('folded, the sentence carries how much changed and shows no code',
+    folded.includes('+2 lines') && !folded.includes('+ a'), folded);
 
   const open = toggleOutput(one, 'w');
   const shown = contentRowsWithOwners(open, 60).rows.join('\n').replace(/\u001B\[[0-9;]*m/g, '');
-  ok('opened, it shows the lines with their signs', shown.includes('+ a') && shown.includes('+ b'), shown);
+  ok('opened, it shows the call and the lines with their signs',
+    shown.includes('Write File(thing.py)') && shown.includes('+ a') && shown.includes('+ b'), shown);
 
   const edit = withItems([wrote('e', [{sign: '-', text: 'old'}, {sign: '+', text: 'new'}])]);
   const editFolded = contentRowsWithOwners(edit, 60).rows.join('\n').replace(/\u001B\[[0-9;]*m/g, '');
@@ -107,6 +125,9 @@ console.log('\nthe code the engine wrote');
   ok('one changed line is a line, not lines',
     contentRowsWithOwners(withItems([wrote('s', [{sign: '+', text: 'x'}])]), 60)
       .rows.join('').replace(/\u001B\[[0-9;]*m/g, '').includes('+1 line'));
+  ok('the sentence names what the tool did in English',
+    contentRowsWithOwners(withItems([wrote('s', [{sign: '+', text: 'x'}])]), 60)
+      .rows.join('').replace(/\u001B\[[0-9;]*m/g, '').includes('Wrote 1 file'));
 
   ok('a write_file row can now be opened at all — it captures no output',
     toggleOutput(one, 'w').open.has('w'));

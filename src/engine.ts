@@ -43,16 +43,9 @@ export type Engine = {
    * that never existed, is a mark nobody reads.
    */
   cancel(goalId: string): void;
-  /**
-   * Answer a question the engine stopped for.
-   *
-   * `answerClarification` lives on MainBrain, not on ApplicationRuntime — the
-   * runtime exposes `context` and the brain is reached through it, which is
-   * what `engine-rest`'s own controller does (goals.controller.ts:98). Checked
-   * rather than assumed: `executeGoal` was already one wrong guess on this
-   * surface.
-   */
-  answer(goalId: string, text: string): Promise<{success: boolean; status: string}>;
+  // NO `answer`. The engine has no clarification state and no second entry
+  // point: when it needs something it says so and the goal ends, and the next
+  // thing typed is an ordinary `submit` that arrives with the exchange above it.
   shutdown(): Promise<void>;
 };
 
@@ -176,21 +169,6 @@ export async function openEngine(enginePath = DEFAULT_ENGINE): Promise<Engine | 
               id: string;
             }) => Promise<{success: boolean; status: string}>
           )({goal, id: goalId});
-          return {success: result?.success ?? false, status: result?.status ?? 'unknown'};
-        } catch (error) {
-          if (!cancellation.owns(error)) throw error;
-          return {success: false, status: 'stopped'};
-        }
-      },
-      answer: async (goalId, text) => {
-        const context = app['context'] as {mainBrain: Record<string, unknown>};
-        try {
-          const result = await (
-            context.mainBrain['answerClarification'] as (
-              g: string,
-              r: string
-            ) => Promise<{success: boolean; status: string}>
-          )(goalId, text);
           return {success: result?.success ?? false, status: result?.status ?? 'unknown'};
         } catch (error) {
           if (!cancellation.owns(error)) throw error;

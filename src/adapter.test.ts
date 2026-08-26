@@ -51,17 +51,6 @@ ok('a successful call is ok', (() => {
     return i?.kind === 'did' && i.state === 'ok';
   })());
 
-console.log('\na question stops the goal, and reads as a question');
-ok('clarification.requested becomes asked',
-  (() => {
-    const i = toItem(ev('clarification.requested', {
-      question: 'Which database?', confidence: 0.4, missingInformation: ['db'], settled: []
-    }));
-    return i?.kind === 'asked' && i.question === 'Which database?';
-  })());
-ok('no question authored → nothing rendered',
-  toItem(ev('clarification.requested', {confidence: 0.4})) === undefined);
-
 console.log('\nverification: a pass is the absence of news');
 ok('a passing verification renders nothing',
   toItem(ev('verification.completed', {passed: true, reason: 'All requirements met'})) === undefined);
@@ -129,15 +118,6 @@ for (const t of ['tool.args.normalized', 'worker.done', 'goal.completed', 'retry
 
 // ── the question carries what an answer needs ───────────────────────────────
 console.log('\nasked carries the goal an answer is addressed to');
-ok('goalId comes from the envelope, not the payload',
-  (() => {
-    const i = toItem({
-      eventType: 'clarification.requested',
-      goalId: 'goal-42',
-      payload: {question: 'Which database?', confidence: 0.3, missingInformation: [], settled: []}
-    });
-    return i?.kind === 'asked' && i.goalId === 'goal-42' && i.question === 'Which database?';
-  })());
 
 console.log('\nthe engine is heard, not summarised');
 ok('a conversation reply is what the reader sees, not the status word',
