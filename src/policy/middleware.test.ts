@@ -54,6 +54,28 @@ console.log('\nstopping — a flag the engine walks past, not an interrupt');
   let other = false;
   try { mw(h).beforeWave({goalId: 'g2'}); } catch { other = true; }
   ok('an unmarked goal is untouched', !other);
+
+  // Carried over from cancel.test.ts, which this module absorbed. Every
+  // responsibility that file was the sole producer of is asserted here before
+  // it was deleted: both hooks, the spent mark, a concurrent goal, and a
+  // signal from somewhere else.
+  const h2 = harness('automatic');
+  h2.control.cancel('a');
+  let waveThrew = false;
+  try { mw(h2).beforeWave({goalId: 'a'}); } catch (e) { waveThrew = h2.control.owns(e); }
+  ok('beforeWave throws the host signal too — execution is covered, not only planning', waveThrew);
+
+  const h3 = harness('automatic');
+  h3.control.cancel('a');
+  let concurrent = false;
+  try { mw(h3).beforeWave({goalId: 'b'}); } catch { concurrent = true; }
+  ok('only the marked goal — a concurrent one runs on', !concurrent);
+
+  const h4 = harness('automatic');
+  h4.control.cancel('never-ran');
+  ok('cancelling a goal that is not running is not an error', true);
+  ok('and a signal from somewhere else is not claimed as ours',
+    !h4.control.owns(new Error('someone else\'s')));
 }
 
 console.log('\nplan mode — a host abort after the plan exists, before anything runs');
