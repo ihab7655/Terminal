@@ -44,6 +44,31 @@ export const en: Catalogue = {
     forbiddenHolds: 'forbidden holds in every mode'
   },
 
+  phases: {
+    starting: 'starting',
+    reading: 'reading the request',
+    planning: 'planning',
+    planned: 'planned',
+    executing: 'executing',
+    waveFinished: 'wave finished',
+    working: 'working',
+    checkpoint: 'saved a checkpoint'
+  },
+  outcome: {
+    completed: 'completed',
+    finished: 'finished',
+    failed: 'the goal failed',
+    verificationFailed: 'verification failed',
+    retrying: 'retrying',
+    stopping: 'stopping — the engine finishes the work already in flight first',
+    buildingCapability: 'building a capability it does not have',
+    judgesUnreliable: 'the engine judges {tool} unreliable — from its record, not from this goal',
+    repairing: 'repairing {tool}',
+    repaired: 'repaired {tool}',
+    noEngineHere: 'no engine — nothing to run this against',
+    endedBadly: 'the goal ended badly'
+  },
+
   places: {
     title: 'PLACES',
     keys: 'Keys', keysHint: 'what every key does here',

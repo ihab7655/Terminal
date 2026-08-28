@@ -56,5 +56,21 @@ ok('a tool name is an identifier and passes through untranslated',
   en.plural(en.did.other, 1).includes('{tool}') === false ||
   en.plural(en.did.other, 1) === 'Called {tool}');
 
+
+console.log('\nthe engine\'s events read in the chosen language too');
+{
+  const {toItem} = await import('../adapter.js');
+  const ev = (t: string, p: Record<string, unknown> = {}) =>
+    ({eventType: t, goalId: 'g', payload: p});
+  const start = (c: typeof en) => (toItem(ev('goal.started'), c) as {text: string}).text;
+  ok('English: goal.started reads "starting"', start(en) === 'starting');
+  ok('Arabic: the same event reads "يبدأ"', start(ar) === 'يبدأ', start(ar));
+  const judged = (c: typeof en) =>
+    (toItem(ev('capability.evolution', {phase: 'needed', capability: 'bash'}), c) as {lines: string[]}).lines[0]!;
+  ok('a conclusion carries the tool name untranslated in both',
+    judged(en).includes('bash') && judged(ar).includes('bash'));
+  ok('while its sentence is the language in use',
+    judged(ar).includes('غير موثوقة'), judged(ar));
+}
 console.log(failed === 0 ? '\ni18n: all passed\n' : `\ni18n: ${failed} FAILED\n`);
 if (failed > 0) process.exit(1);

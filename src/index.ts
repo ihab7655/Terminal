@@ -17,7 +17,7 @@ import {chosen, launcherUp, offered} from './console.js';
 import {queryOf} from './places/registry.js';
 import {workspaceName, standing} from './session.js';
 import {load, save, type Settings, type Standing} from './settings/store.js';
-import {catalogues} from './i18n/index.js';
+import {catalogues, catalogueFor} from './i18n/index.js';
 import type {Answer, ApprovalRequest, Live} from './policy/middleware.js';
 import {next as newerInHistory, previous as olderInHistory, remember} from './history.js';
 import {onKey, type Key} from './keys.js';
@@ -386,7 +386,7 @@ async function ask(goal: string): Promise<void> {
   // behind it. Resolved already once it has, so a later goal pays nothing.
   if (engineOpening) await engineOpening;
   if (!engine) {
-    add({kind: 'noted', id: `noted-${Date.now()}`, lines: ['no engine — nothing to run this against']});
+    add({kind: 'noted', id: `noted-${Date.now()}`, lines: [catalogueFor(settings.language).outcome.noEngineHere]});
     return;
   }
   const goalId = randomUUID();
@@ -397,7 +397,7 @@ async function ask(goal: string): Promise<void> {
       add({
         kind: 'noted',
         id: `noted-${Date.now()}`,
-        lines: [`the goal ended badly: ${err instanceof Error ? err.message : String(err)}`]
+        lines: [`${catalogueFor(settings.language).outcome.endedBadly}: ${err instanceof Error ? err.message : String(err)}`]
       });
     })
     // Including a goal that ended by asking something: that IS an ending now,
@@ -464,7 +464,7 @@ if (process.env['DEMO']) {
     // about to stop for a second and a half — a mark that cannot turn while the
     // thing it describes is happening is worse than no mark. It also stays in
     // the log afterwards, where it explains the one pause this console has.
-    add({kind: 'noted', id: 'waking', lines: ['waking the engine']});
+    add({kind: 'noted', id: 'waking', lines: [catalogueFor(settings.language).engine.waking]});
     engineOpening = openEngine(live).then(opened => {
       if (isFailure(opened)) {
         add({
@@ -479,7 +479,12 @@ if (process.env['DEMO']) {
       edit(s => ({...s, engineFacts: [`engine · open`, `workspace · ${workspaceName(here.workspace)}`, `session · ${here.sessionId}`]}));
       // Every execution event, through the adapter, in the order it arrived.
       opened.watch(event => {
-        const item = toItem(event);
+        // The catalogue in use at the moment the event arrives. An item is
+        // stored as words once, so the language a person had chosen when it
+        // happened is the language it keeps — the engine's own prose behaves
+        // the same way, and a transcript that re-wrote its own history would
+        // be claiming to have said something it did not.
+        const item = toItem(event, catalogueFor(settings.language));
         if (item) add(item);
       });
     });

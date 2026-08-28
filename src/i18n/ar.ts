@@ -69,6 +69,31 @@ export const ar: Catalogue = {
     forbiddenHolds: 'الممنوع ممنوع في كل الأوضاع'
   },
 
+  phases: {
+    starting: 'يبدأ',
+    reading: 'يقرأ الطلب',
+    planning: 'يخطّط',
+    planned: 'خطّط',
+    executing: 'ينفّذ',
+    waveFinished: 'انتهت الموجة',
+    working: 'يعمل',
+    checkpoint: 'حفظ نقطة'
+  },
+  outcome: {
+    completed: 'اكتمل',
+    finished: 'انتهى',
+    failed: 'أخفق الهدف',
+    verificationFailed: 'أخفق التحقّق',
+    retrying: 'يعيد المحاولة',
+    stopping: 'يتوقّف — المحرّك يُنهي ما هو في الطريق أولاً',
+    buildingCapability: 'يبني قدرة لا يملكها',
+    judgesUnreliable: 'المحرّك يرى {tool} غير موثوقة — من سجلّها، لا من هذا الهدف',
+    repairing: 'يُصلح {tool}',
+    repaired: 'أصلح {tool}',
+    noEngineHere: 'لا محرّك — لا شيء يُشغَّل عليه',
+    endedBadly: 'انتهى الهدف بسوء'
+  },
+
   places: {
     title: 'الأماكن',
     keys: 'المفاتيح', keysHint: 'ما يفعله كل مفتاح هنا',

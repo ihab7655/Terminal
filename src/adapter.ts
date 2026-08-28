@@ -1,4 +1,6 @@
 import type {Change, Item} from './console.js';
+import {en} from './i18n/en.js';
+import {fill, type Catalogue} from './i18n/catalogue.js';
 
 // ── The engine's events, as things a person reads ────────────────────────────
 //
@@ -84,23 +86,23 @@ const id = (kind: string) => `${kind}-${seq++}`;
  * tuning and not something a person watching their goal needs. An adapter that
  * rendered every event would be a log viewer, which this is not.
  */
-export function toItem(event: EngineEvent): Item | undefined {
+export function toItem(event: EngineEvent, say: Catalogue = en): Item | undefined {
   const p = event.payload;
 
   switch (event.eventType) {
     // ── where the engine is ────────────────────────────────────────────────
     case 'goal.started':
-      return {kind: 'phase', since: now(), id: id('phase'), text: 'starting'};
+      return {kind: 'phase', since: now(), id: id('phase'), text: say.phases.starting};
     case 'classification.completed':
-      return {kind: 'phase', since: now(), id: id('phase'), text: 'reading the request'};
+      return {kind: 'phase', since: now(), id: id('phase'), text: say.phases.reading};
     case 'planning.started':
-      return {kind: 'phase', since: now(), id: id('phase'), text: 'planning'};
+      return {kind: 'phase', since: now(), id: id('phase'), text: say.phases.planning};
     case 'planning.finished': {
       const waves = num(p['wavesCount']);
       return {
         kind: 'phase',
         id: id('phase'),
-        text: 'planned',
+        text: say.phases.planned,
         ...(waves !== undefined ? {detail: `${waves} wave${waves === 1 ? '' : 's'}`} : {})
       };
     }
@@ -109,18 +111,18 @@ export function toItem(event: EngineEvent): Item | undefined {
       return {
         kind: 'phase',
         id: id('phase'),
-        text: 'executing',
+        text: say.phases.executing,
         ...(wave !== undefined ? {detail: `wave ${wave + 1}`} : {})
       };
     }
     case 'execution.wave.finished':
-      return {kind: 'phase', since: now(), id: id('phase'), text: 'wave finished'};
+      return {kind: 'phase', since: now(), id: id('phase'), text: say.phases.waveFinished};
     case 'worker.spawned':
-      return {kind: 'phase', since: now(), id: id('phase'), text: 'working'};
+      return {kind: 'phase', since: now(), id: id('phase'), text: say.phases.working};
     case 'checkpoint.saved':
       // Real, and it happens between the phases above — as its own line it would
       // only flicker. Kept as a phase so it is not silently dropped.
-      return {kind: 'phase', since: now(), id: id('phase'), text: 'saved a checkpoint'};
+      return {kind: 'phase', since: now(), id: id('phase'), text: say.phases.checkpoint};
 
     // ── what it did, and how it went ───────────────────────────────────────
     case 'tool.called': {
@@ -193,7 +195,7 @@ export function toItem(event: EngineEvent): Item | undefined {
     }
     case 'goal.failed': {
       const reason = str(p['reason']);
-      return {kind: 'spoke', id: id('spoke'), text: reason ?? 'the goal failed'};
+      return {kind: 'spoke', id: id('spoke'), text: reason ?? say.outcome.failed};
     }
 
     // No `clarification.requested`. The engine has no clarification state: when
@@ -206,7 +208,9 @@ export function toItem(event: EngineEvent): Item | undefined {
       return {
         kind: 'noted',
         id: id('noted'),
-        lines: [reason ? `verification failed — ${reason}` : 'verification failed']
+        // The engine's own reason is kept verbatim — it names requirements by
+        // their ids, which are identifiers and not phrases to translate.
+        lines: [reason ? `${say.outcome.verificationFailed} — ${reason}` : say.outcome.verificationFailed]
       };
     }
     case 'retry.triggered': {
@@ -216,7 +220,7 @@ export function toItem(event: EngineEvent): Item | undefined {
         kind: 'noted',
         id: id('noted'),
         lines: [
-          `retrying${attempt !== undefined ? ` — attempt ${attempt + 1}` : ''}${reason ? `: ${reason}` : ''}`
+          `${say.outcome.retrying}${attempt !== undefined ? ` — ${attempt + 1}` : ''}${reason ? `: ${reason}` : ''}`
         ]
       };
     }
@@ -232,7 +236,7 @@ export function toItem(event: EngineEvent): Item | undefined {
         return {kind: 'noted', id: id('noted'), lines: [`missing a capability: ${text ?? ''}`.trim()]};
       }
       if (to === 'ACQUIRING') {
-        return {kind: 'phase', since: now(), id: id('phase'), text: 'building a capability it does not have'};
+        return {kind: 'phase', since: now(), id: id('phase'), text: say.outcome.buildingCapability};
       }
       if (to === 'ABANDONED') {
         return {
@@ -288,9 +292,9 @@ export function toItem(event: EngineEvent): Item | undefined {
       // engine's and it is honestly reported. What is fixed is the console
       // saying WHAT it is.
       const said: Record<string, string> = {
-        needed: `the engine judges ${capability} unreliable — from its record, not from this goal`,
-        started: `repairing ${capability}`,
-        succeeded: `repaired ${capability}`,
+        needed: fill(say.outcome.judgesUnreliable, {tool: capability}),
+        started: fill(say.outcome.repairing, {tool: capability}),
+        succeeded: fill(say.outcome.repaired, {tool: capability}),
         failed: `could not repair ${capability}`,
         awaiting_permission: `a repair for ${capability} is waiting on permission`
       };

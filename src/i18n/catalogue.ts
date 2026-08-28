@@ -73,6 +73,33 @@ export type Catalogue = {
     readonly forbiddenHolds: string;
   };
 
+  /** What the engine is doing, said as one line that replaces the last. */
+  readonly phases: {
+    readonly starting: string;
+    readonly reading: string;
+    readonly planning: string;
+    readonly planned: string;
+    readonly executing: string;
+    readonly waveFinished: string;
+    readonly working: string;
+    readonly checkpoint: string;
+  };
+  /** What became of a goal, and what the engine concluded on the way. */
+  readonly outcome: {
+    readonly completed: string;
+    readonly finished: string;
+    readonly failed: string;
+    readonly verificationFailed: string;
+    readonly retrying: string;
+    readonly stopping: string;
+    readonly buildingCapability: string;
+    readonly judgesUnreliable: string;
+    readonly repairing: string;
+    readonly repaired: string;
+    readonly noEngineHere: string;
+    readonly endedBadly: string;
+  };
+
   readonly places: {
     readonly title: string;
     readonly keys: string; readonly keysHint: string;
