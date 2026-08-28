@@ -2,12 +2,13 @@ import {actionsOf, isRunning, sentenceOf, type Action} from './action.js';
 import {NO_HISTORY, type History} from './history.js';
 import {RAIL_ROWS, rail} from './rail.js';
 import {paint, screenSize} from './screen.js';
-import {INVERSE, RESET, colour, paint as tint} from './style.js';
+import {INVERSE, RESET, colour, mark as glyph, paint as tint} from './style.js';
 import {cell, fit, fitStyled, wrap} from './text.js';
 import {START, reflow, scroll, windowOnto, type ScrollCommand, type Viewport} from './viewport.js';
 import {catalogueFor, DEFAULT_LANGUAGE, type Catalogue} from './i18n/index.js';
 import type {Mode} from './settings/store.js';
 import {matching, PLACES, queryOf, type Place, type PlaceId} from './places/registry.js';
+import {profiles as PROFILES} from './theme/profiles.js';
 
 // The console: content in, one frame out.
 //
@@ -233,6 +234,16 @@ export type State = {
   } | null;
   /** What the engine can reach for, once Capabilities has been opened. */
   capabilities: ReadonlyArray<{name: string; category: string}> | null;
+  /** The way of working in use, and whether a hand edit has moved it since. */
+  profile: string;
+  adjusted: boolean;
+  /**
+   * A profile that widens what may happen, waiting for its name to be typed.
+   *
+   * Confirmed by TYPING, not by pressing a key: a word is the record that a
+   * person chose it. Asked once — afterwards it is simply the profile in use.
+   */
+  confirming: string | null;
 };
 
 export const emptyState = (): State => ({
@@ -258,11 +269,14 @@ export const emptyState = (): State => ({
   record: null,
   recordAt: 0,
   inspecting: null,
-  capabilities: null
+  capabilities: null,
+  profile: 'phosphor',
+  adjusted: false,
+  confirming: null
 });
 
-const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-export const spinnerFrame = (n: number) => SPINNER[n % SPINNER.length]!;
+
+export const spinnerFrame = (n: number) => glyph.spinner[n % glyph.spinner.length]!;
 
 /**
  * The phase still worth drawing, or -1.
@@ -306,7 +320,7 @@ const verbWidth = (items: readonly Item[]) =>
 
 function markOf(item: Extract<Item, {kind: 'did'}>, spinner: number) {
   if (item.state === 'running') return {ch: spinnerFrame(spinner), tone: colour.ink};
-  if (item.state === 'failed') return {ch: '✕', tone: colour.red};
+  if (item.state === 'failed') return {ch: glyph.failed, tone: colour.red};
   return {ch: '✓', tone: colour.cyanSoft};
 }
 
@@ -452,7 +466,7 @@ function itemRows(item: Item, state: State, width: number, verbs: number): strin
     const room = Math.max(8, width - left - MARK);
     const verdict = say.steer[item.state as keyof typeof say.steer] ?? item.state;
     return [
-      ' '.repeat(left) + tint('»', colour.amber) + ' ' +
+      ' '.repeat(left) + tint(glyph.steer, colour.amber) + ' ' +
         tint(fit(item.text, room), colour.ink) + ' ' +
         tint(verdict, colour.dim)
     ];
@@ -463,7 +477,7 @@ function itemRows(item: Item, state: State, width: number, verbs: number): strin
     const left = INDENT + MARK;
     const room = Math.max(8, width - left);
     const rows = [
-      ' '.repeat(INDENT) + tint('▸', colour.amber) + ' ' +
+      ' '.repeat(INDENT) + tint(glyph.asked, colour.amber) + ' ' +
         tint(fit(say.planned.heading, room), colour.ink) +
         tint(' · ' + say.planned.nothingRan, colour.dim)
     ];
@@ -494,7 +508,7 @@ function itemRows(item: Item, state: State, width: number, verbs: number): strin
     // where a long line is ordinary, and `fit` cuts it at the real width like
     // every other row.
     const rows = [
-      ' '.repeat(INDENT) + tint('▸', colour.amber) + ' ' +
+      ' '.repeat(INDENT) + tint(glyph.asked, colour.amber) + ' ' +
         tint(fit(item.effects.join(' · '), room), colour.ink)
     ];
     if (item.target !== undefined)
@@ -544,7 +558,7 @@ function itemRows(item: Item, state: State, width: number, verbs: number): strin
 // The shape is Claude Code's, deliberately — it is what he asked for, and it is
 // the arrangement that answers both readings of a transcript: the sentence
 // while scanning, the call itself when you stop on one.
-const OPEN_MARK = '●';
+
 const OUTPUT_MARK = '⎿';
 
 /** A tool name as a person says it: `write_file` → `Write`. */
@@ -566,8 +580,8 @@ function actionRows(action: Action, state: State, width: number): string[] {
     const mark = isRunning(action)
       ? tint(spinnerFrame(state.spinner), colour.cyanSoft)
       : failed
-        ? tint('✕', colour.red)
-        : tint('●', colour.cyanSoft);
+        ? tint(glyph.failed, colour.red)
+        : tint(glyph.ok, colour.cyanSoft);
     return [
       ' '.repeat(INDENT) + mark + ' ' + tint(fit(sentenceOf(action, say), room), colour.ink)
     ];
@@ -579,8 +593,8 @@ function actionRows(action: Action, state: State, width: number): string[] {
       item.state === 'running'
         ? tint(spinnerFrame(state.spinner), colour.cyanSoft)
         : item.state === 'failed'
-          ? tint(OPEN_MARK, colour.red)
-          : tint(OPEN_MARK, colour.cyanSoft);
+          ? tint(glyph.ok, colour.red)
+          : tint(glyph.ok, colour.cyanSoft);
     // The call, written as it was made: Bash(cat /home/spark/notes).
     const call = `${titleOf(item.verb)}(${item.object})`;
     wrap(call, room).forEach((line, i) =>
@@ -855,7 +869,7 @@ export function frame(state: State): {rows: string[]; view: Viewport} {
   // the two are different kinds of thing sharing one screen. It costs a row of
   // transcript, which is why it is the last piece of chrome added and the first
   // that would go.
-  const divider = tint('─'.repeat(width), colour.dim);
+  const divider = tint(glyph.rule.repeat(width), colour.dim);
   return {
     rows: [
       rail(width, 'top', identity(state), status(state)),
@@ -917,7 +931,7 @@ function placeRows(state: State, width: number): string[] {
       break;
     case 'mode':
       for (const m of ['automatic', 'approval', 'plan'] as const)
-        rows.push(line(`${m === state.mode ? '◆' : '◈'} ${m}   ${say.modes[m]}`,
+        rows.push(line(`${m === state.mode ? glyph.chosen : glyph.other} ${m}   ${say.modes[m]}`,
           m === state.mode ? colour.ink : colour.muted));
       rows.push(line(say.modes.separate, colour.dim));
       break;
@@ -928,7 +942,7 @@ function placeRows(state: State, width: number): string[] {
       break;
     case 'language':
       for (const [id, name] of state.languages)
-        rows.push(line(`${id === state.language ? '◆' : '◈'} ${name}`,
+        rows.push(line(`${id === state.language ? glyph.chosen : glyph.other} ${name}`,
           id === state.language ? colour.ink : colour.muted));
       break;
     case 'workspace':
@@ -945,7 +959,7 @@ function placeRows(state: State, width: number): string[] {
         const on = i === state.recordAt;
         rows.push(
           ' '.repeat(INDENT) +
-            tint(on ? '◆ ' : '  ', colour.cyan) +
+            tint(on ? glyph.chosen + ' ' : '  ', colour.cyan) +
             tint(fit(`${g.at}  ${g.status}  ${g.goal}`, Math.max(8, room - 2)),
               on ? colour.ink : g.status === 'failed' ? colour.red : colour.muted)
         );
@@ -977,6 +991,26 @@ function placeRows(state: State, width: number): string[] {
       break;
     }
 
+    case 'profiles': {
+      if (state.confirming !== null) {
+        rows.push(line(say.profile.confirmHead, colour.ink));
+        rows.push(line(say.profile.confirmBody, colour.muted));
+        rows.push(line(say.profile.confirmDoesNot, colour.dim));
+        rows.push(line(`${say.profile.confirmType}: ${state.confirming}`, colour.amber));
+        rows.push(line(say.profile.cancel, colour.dim));
+        break;
+      }
+      for (const p of PROFILES) {
+        const on = p.id === state.profile;
+        rows.push(line(
+          `${on ? glyph.chosen : glyph.other} ${p.id}   ${p.mode}` +
+            (on && state.adjusted ? ` · ${say.profile.adjusted}` : ''),
+          on ? colour.ink : colour.muted));
+      }
+      rows.push(line(say.profile.appliesAll, colour.dim));
+      break;
+    }
+
     case 'capabilities':
       if (state.capabilities === null) { rows.push(line(say.places.loading, colour.dim)); break; }
       if (state.capabilities.length === 0) { rows.push(line(say.places.nothingYet, colour.dim)); break; }
@@ -1001,7 +1035,7 @@ function launcherRows(state: State, width: number): string[] {
     const room = Math.max(8, width - INDENT - 6);
     rows.push(
       ' '.repeat(INDENT) +
-        tint(on ? '◆' : '◈', on ? colour.cyan : colour.dim) + ' ' +
+        tint(on ? glyph.chosen : glyph.other, on ? colour.cyan : colour.dim) + ' ' +
         // The place's OWN number, not its position — it does not move as a
         // query narrows, so a number a person learned stays true.
         tint(String(place.number), colour.dim) + '  ' +

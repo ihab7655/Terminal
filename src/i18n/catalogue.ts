@@ -65,6 +65,16 @@ export type Catalogue = {
 
   readonly session: string;
   /** The Inspector's own headings, for one execution read whole. */
+  /** Choosing a way of working, and confirming one that widens what may happen. */
+  readonly profile: {
+    readonly adjusted: string;
+    readonly appliesAll: string;
+    readonly confirmHead: string;
+    readonly confirmBody: string;
+    readonly confirmDoesNot: string;
+    readonly confirmType: string;
+    readonly cancel: string;
+  };
   readonly record: {
     readonly status: string;
     readonly attempts: string;
@@ -134,6 +144,7 @@ export type Catalogue = {
     readonly history: string; readonly historyHint: string;
     readonly inspector: string; readonly inspectorHint: string;
     readonly capabilities: string; readonly capabilitiesHint: string;
+    readonly profiles: string; readonly profilesHint: string;
     readonly pickAGoal: string;
     readonly openARow: string;
     readonly loading: string;

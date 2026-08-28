@@ -19,6 +19,9 @@ import {workspaceName, standing} from './session.js';
 import {load, save, type Settings, type Standing} from './settings/store.js';
 import {catalogues, catalogueFor} from './i18n/index.js';
 import type {Answer, ApprovalRequest, Live} from './policy/middleware.js';
+import {adjusted, apply, profileFor, profiles as PROFILES} from './theme/profiles.js';
+import {themeFor} from './theme/themes.js';
+import {wear} from './style.js';
 import {next as newerInHistory, previous as olderInHistory, remember} from './history.js';
 import {onKey, type Key} from './keys.js';
 import {advance, openingRows, skipOpening, startOpening, TICK_MS, type Opening} from './opening.js';
@@ -101,6 +104,12 @@ const live: Live = {
   }
 };
 
+// Worn before anything is drawn, so the first frame is already in the profile
+// a person chose. `wear()` writes the palette and the glyphs in place, and the
+// frame is built fresh from state every time — so a later change repaints in
+// the new hand with nothing rebuilt.
+wear(themeFor(settings.theme));
+
 let state: State = {
   ...emptyState(),
   workspace: workspaceName(here.workspace),
@@ -108,7 +117,9 @@ let state: State = {
   mode: settings.mode,
   sessionId: here.sessionId,
   policy: Object.entries(settings.policy),
-  languages: [...catalogues].map(([id, c]) => [id, c.name] as const)
+  languages: [...catalogues].map(([id, c]) => [id, c.name] as const),
+  profile: settings.profile,
+  adjusted: adjusted(profileFor(settings.profile), settings.mode, settings.policy, settings.theme)
 };
 
 // The engine, once it answers. Absent means the console is usable and says so
@@ -241,12 +252,45 @@ function key(k: Key) {
     // handled below — the opening owns every key until it ends
   } else if (state.place !== null) {
     if (k.name === 'escape' || (k.ctrl && k.text === 'k')) {
-      edit(s => ({...s, place: null, launcher: {open: k.ctrl === true, at: 0}}));
+      edit(s => ({...s, place: null, confirming: null, input: '', caret: 0, launcher: {open: k.ctrl === true, at: 0}}));
       return;
     }
     // History is the one place with rows to walk: Enter on a goal opens the
     // Inspector on it. Everywhere else these keys do nothing rather than
     // something arbitrary.
+    // ── CHOOSING A WAY OF WORKING ────────────────────────────────────────
+    //
+    // A profile that widens what may happen is confirmed by TYPING its name.
+    // Every character reaches the composer as usual; Enter checks what was
+    // typed against the name, and nothing else in the console is listening.
+    if (state.place === 'profiles') {
+      if (state.confirming !== null) {
+        if (k.name === 'enter') {
+          const wanted = state.confirming;
+          const typed = state.input.trim();
+          edit(s => ({...s, input: '', caret: 0}));
+          if (typed === wanted) putOn(wanted);
+          else edit(s => ({...s, confirming: null}));
+          return;
+        }
+        // Esc is handled above, where it closes the innermost open thing —
+        // and a confirmation is part of the place it is asked in, so leaving
+        // the place abandons it. Cleared there, not here.
+      } else {
+        const at = PROFILES.findIndex(p => p.id === state.profile);
+        if (k.name === 'up' || k.name === 'down') {
+          const next = PROFILES[Math.max(0, Math.min(PROFILES.length - 1, at + (k.name === 'down' ? 1 : -1)))]!;
+          edit(s => ({...s, profile: next.id}));
+          return;
+        }
+        if (k.name === 'enter') {
+          const p = profileFor(state.profile);
+          if (p.confirm) edit(s => ({...s, confirming: p.id, input: '', caret: 0}));
+          else putOn(p.id);
+          return;
+        }
+      }
+    }
     if (state.place === 'history' && state.record !== null) {
       if (k.name === 'up') { edit(s => ({...s, recordAt: Math.max(0, s.recordAt - 1)})); return; }
       if (k.name === 'down') {
@@ -519,6 +563,33 @@ function inspect(goalId: string): void {
            lines: [`${catalogueFor(settings.language).outcome.endedBadly}: ${err instanceof Error ? err.message : String(err)}`]});
       edit(s => ({...s, place: null}));
     });
+}
+
+/**
+ * Put a profile on: appearance, how it runs, and what it may do.
+ *
+ * The one act that touches all three, and it is a one-time act rather than a
+ * coupling — afterwards each is an ordinary setting and a hand edit to any of
+ * them wins and stays. `adjusted` then says the profile's name is no longer the
+ * whole story, which is honesty rather than a warning.
+ */
+function putOn(id: string): void {
+  const p = profileFor(id);
+  const next = apply(p);
+  settings = {...settings, profile: id, theme: next.theme, mode: next.mode, policy: next.policy};
+  const trouble = save(settings);
+  wear(themeFor(next.theme));
+  edit(s => ({
+    ...s,
+    profile: id,
+    confirming: null,
+    mode: next.mode,
+    policy: Object.entries(next.policy),
+    adjusted: false,
+    input: '',
+    caret: 0
+  }));
+  if (trouble) add({kind: 'noted', id: `noted-${Date.now()}`, lines: [`could not remember that: ${trouble}`]});
 }
 
 async function ask(goal: string): Promise<void> {

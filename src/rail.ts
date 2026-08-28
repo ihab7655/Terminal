@@ -12,19 +12,22 @@
 // It is lighter than a box on purpose. A box spends four rows on chrome before
 // naming anything, and on a small window that is the whole budget.
 
-import {colour, paint as tint} from './style.js';
+import {colour, mark, paint as tint} from './style.js';
 import {width as columnsOf} from './text.js';
 
 export type RailEdge = 'top' | 'bottom' | 'section';
 
-const CORNER: Record<RailEdge, [string, string]> = {
-  // A section rail has no corners: it divides one screen rather than closing a
-  // frame, and a corner there would read as a second window opening inside the
-  // first.
-  section: ['─', '─'],
-  top: ['╭', '╮'],
-  bottom: ['╰', '╯']
-};
+// Read from the theme in use, on every call — so a profile change repaints the
+// frame in its own hand at the next repaint, with nothing here remembering.
+const CORNER = (edge: RailEdge): [string, string] =>
+  edge === 'section'
+    // A section rail has no corners: it divides one screen rather than closing
+    // a frame, and a corner there would read as a second window opening inside
+    // the first.
+    ? [mark.rule, mark.rule]
+    : edge === 'top'
+      ? [mark.corners[0]!, mark.corners[1]!]
+      : [mark.corners[2]!, mark.corners[3]!];
 
 // Below this the line stops reading as a rail and starts reading as a hyphen.
 const MIN_FILL = 2;
@@ -38,12 +41,12 @@ const MIN_FILL = 2;
  */
 export function rail(width: number, edge: RailEdge, title = '', status = ''): string {
   if (width <= 0) return '';
-  const [left, right] = CORNER[edge];
-  const head = `${left}── `;
+  const [left, right] = CORNER(edge);
+  const head = `${left}${mark.rule}${mark.rule} `;
   // The space before the closing corner sets a status off from the line. With
   // no status there is nothing to set off, and the gap reads as the rail
   // breaking before it ends.
-  const tailFor = (note: string) => (note ? ` ─${right}` : `─${right}`);
+  const tailFor = (note: string) => (note ? ` ${mark.rule}${right}` : `${mark.rule}${right}`);
 
   let note = status;
   let name = title;
@@ -60,12 +63,12 @@ export function rail(width: number, edge: RailEdge, title = '', status = ''): st
 
   const fill = Math.max(0, width - cost());
   // Nothing named fits at all: the rail is a rail and nothing else.
-  if (fill === 0 && cost() > width) return tint('─'.repeat(width), colour.dim);
+  if (fill === 0 && cost() > width) return tint(mark.rule.repeat(width), colour.dim);
 
   return (
     tint(head, colour.dim) +
     (name ? tint(name, colour.ink) : '') +
-    tint(`${name ? ' ' : ''}${'─'.repeat(fill)}${note ? ' ' : ''}`, colour.dim) +
+    tint(`${name ? ' ' : ''}${mark.rule.repeat(fill)}${note ? ' ' : ''}`, colour.dim) +
     (note ? tint(note, colour.amber) : '') +
     tint(tail, colour.dim)
   );

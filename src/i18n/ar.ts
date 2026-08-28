@@ -50,6 +50,15 @@ export const ar: Catalogue = {
     }
   },
   session: 'الجلسة',
+  profile: {
+    adjusted: 'معدَّل',
+    appliesAll: 'اختيار واحد يضبط الثلاثة · وما تغيّره بعدها يبقى',
+    confirmHead: 'هذا يجعل التشغيل تلقائياً وكل صفّ مسموحاً',
+    confirmBody: 'الشِل وأيّ أمر · الكتابة والتعديل والحذف · الشبكة · git',
+    confirmDoesNot: 'لا يمنح شيئاً لا يستطيعه هذا الحساب أصلاً · كل مكالمة تبقى في الشريط · وEsc ما زال يوقف',
+    confirmType: 'اكتب الاسم لتشغيله',
+    cancel: 'Esc يلغي'
+  },
   record: {
     status: 'الحالة', attempts: 'المحاولات', took: 'استغرق', plan: 'الخطّة',
     proved: 'أثبت', workers: 'العمّال', retries: 'الإعادات',
@@ -120,6 +129,7 @@ export const ar: Catalogue = {
     history: 'السجلّ', historyHint: 'كل هدف نفّذه هذا المحرّك',
     inspector: 'المفتّش', inspectorHint: 'تنفيذ واحد، مقروءاً كاملاً',
     capabilities: 'القدرات', capabilitiesHint: 'ما يستطيع المحرّك أن يمدّ يده إليه',
+    profiles: 'الملفّات', profilesHint: 'كيف يبدو، وكيف يعمل، وما المسموح له',
     pickAGoal: 'افتح السجلّ واضغط Enter على هدف',
     openARow: '↑↓ تحرّك · Enter افحص · Esc رجوع',
     loading: 'يقرأ السجلّ…',

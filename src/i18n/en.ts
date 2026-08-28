@@ -25,6 +25,15 @@ export const en: Catalogue = {
     rowsBelow: {one: '{n} row below · PgDn', other: '{n} rows below · PgDn'}
   },
   session: 'session',
+  profile: {
+    adjusted: 'adjusted',
+    appliesAll: 'choosing one sets all three · anything you change afterwards stays',
+    confirmHead: 'this sets how it runs to automatic and every row to allowed',
+    confirmBody: 'the shell and any command · writing, editing and deleting · the network · git',
+    confirmDoesNot: 'it grants nothing this account cannot already do · every call is still on the transcript · Esc still stops',
+    confirmType: 'type the name to turn it on',
+    cancel: 'Esc cancels'
+  },
   record: {
     status: 'status', attempts: 'attempts', took: 'took', plan: 'plan',
     proved: 'proved', workers: 'workers', retries: 'retries',
@@ -95,6 +104,7 @@ export const en: Catalogue = {
     history: 'History', historyHint: 'every goal this engine has run',
     inspector: 'Inspector', inspectorHint: 'one execution, read whole',
     capabilities: 'Capabilities', capabilitiesHint: 'what the engine can reach for',
+    profiles: 'Profiles', profilesHint: 'how it looks, how it runs, what it may do',
     pickAGoal: 'open History and press Enter on a goal',
     openARow: '↑↓ move · Enter inspect · Esc back',
     loading: 'reading the record…',

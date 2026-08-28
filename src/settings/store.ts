@@ -39,6 +39,9 @@ export type Standing = {
 export type Settings = {
   version: number;
   language: string;
+  /** The way of working in use, and the appearance it set. */
+  profile: string;
+  theme: string;
   mode: Mode;
   policy: EffectTable;
   standing: Standing[];
@@ -60,6 +63,8 @@ export const CURRENT_VERSION = 1;
 export const defaults = (): Settings => ({
   version: CURRENT_VERSION,
   language: DEFAULT_LANGUAGE,
+  profile: 'phosphor',
+  theme: 'phosphor',
   mode: 'automatic',
   policy: {
     'fs:read': 'allowed',
@@ -126,6 +131,8 @@ export function load(path = settingsPath()): {settings: Settings; unreadable: st
   }
 
   if (typeof f['language'] === 'string') settings.language = f['language'];
+  if (typeof f['profile'] === 'string') settings.profile = f['profile'];
+  if (typeof f['theme'] === 'string') settings.theme = f['theme'];
   if (isMode(f['mode'])) settings.mode = f['mode'];
   else if (f['mode'] !== undefined) unreadable.push('how it runs');
 

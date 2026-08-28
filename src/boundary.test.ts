@@ -70,5 +70,28 @@ ok('the terminal layer imports nothing from above it',
     return !t || !/from '\.\/(console|adapter|action|engine|session|opening|demo|history)\.js'/.test(t[1]);
   }));
 
+console.log('\nand nothing that decides ever reads how it looks');
+
+// The separation between appearance and permission, made mechanical. A profile
+// names both — that is its whole job — but the modules that DECIDE must never
+// import the ones that draw, or a colour could come to stand for a permission.
+const decides = ['policy/decide.ts', 'policy/middleware.ts', 'settings/store.ts', 'session.ts'];
+const readSrc = (rel: string) => {
+  try { return readFileSync(`src/${rel}`, 'utf8'); } catch { return ''; }
+};
+ok('the policy and the settings never import a theme or a palette',
+  decides.every(f => !/from '.*(theme|style)/.test(code(readSrc(f)))),
+  decides.filter(f => /from '.*(theme|style)/.test(code(readSrc(f)))));
+
+ok('themes.ts imports nothing at all — it can have no opinion about anything',
+  !/^import /m.test(code(readSrc('theme/themes.ts'))));
+
+ok('profiles.ts is the ONLY module naming both sides',
+  /from '..\/settings\/store.js'/.test(readSrc('theme/profiles.ts')) &&
+  /from '.\/themes.js'/.test(readSrc('theme/profiles.ts')));
+
+ok('and it holds no state — a profile is an act, not a coupling',
+  !/\blet\b/.test(code(readSrc('theme/profiles.ts'))));
+
 console.log(failed === 0 ? '\nboundary: all passed\n' : `\nboundary: ${failed} FAILED\n`);
 if (failed > 0) process.exit(1);
