@@ -16,7 +16,7 @@ export const en: Catalogue = {
   composer: {
     placeholder: 'say something to the engine',
     whileWorking: 'or say something while it works',
-    keysHint: '? keys'
+    keysHint: '? help'
   },
   keys: {
     stops: 'Esc stops',
@@ -38,6 +38,44 @@ export const en: Catalogue = {
     status: 'status', attempts: 'attempts', took: 'took', plan: 'plan',
     proved: 'proved', workers: 'workers', retries: 'retries',
     guardian: 'guardian', nothing: 'nothing recorded'
+  },
+  help: {
+    title: 'OVERYOS / HELP',
+    subtitle: 'Keyboard shortcuts and console controls',
+    sections: [
+      {name: 'NAVIGATION', entries: [
+        {key: '↑ ↓', does: 'Move between items'},
+        {key: 'Enter', does: 'Open or choose the item under the cursor'},
+        {key: 'Esc', does: 'Go back, or close what is open'},
+        {key: '^K', does: 'Open the list of places'},
+        {key: '/', does: 'Open the same list, filtered by what follows'}
+      ]},
+      {name: 'EXECUTION', entries: [
+        {key: 'Enter', does: 'Send what you have written to the engine'},
+        {key: 'y', does: 'Allow a held call, this once'},
+        {key: 'c', does: 'Allow this exact command from now on'},
+        {key: 'r', does: 'Allow everything on this row, in this workspace'},
+        {key: 'n', does: 'Refuse the held call'},
+        {key: 'Esc', does: 'Stop the goal that is running'}
+      ]},
+      {name: 'READING', entries: [
+        {key: 'Tab', does: 'Unfold every captured output, or fold them again'},
+        {key: 'click', does: 'Unfold the one row under the pointer'},
+        {key: 'PgUp PgDn', does: 'Scroll a page at a time'},
+        {key: 'Home End', does: 'Jump to the beginning, or back to following'}
+      ]},
+      {name: 'WRITING', entries: [
+        {key: '↑ ↓', does: 'Recall what you typed before'},
+        {key: '← →', does: 'Move the caret'},
+        {key: '^A ^E', does: 'Jump to the start or the end of the line'},
+        {key: '^U', does: 'Clear the line'}
+      ]},
+      {name: 'THE CONSOLE', entries: [
+        {key: '?', does: 'Open this page'},
+        {key: '^P', does: 'Open what the engine may do here'},
+        {key: '^C', does: 'Quit — the engine is told, and work in flight is recorded'}
+      ]}
+    ]
   },
   keySheet: [
     ['Enter', 'send · or open the chosen place'],
@@ -99,7 +137,7 @@ export const en: Catalogue = {
 
   places: {
     title: 'PLACES',
-    keys: 'Keys', keysHint: 'what every key does here',
+    help: 'Help', helpHint: 'keyboard shortcuts and console controls',
     mode: 'How it runs', modeHint: 'whether it stops and comes back to you',
     policy: 'What it may do', policyHint: 'set by you, read in every mode',
     language: 'Language', languageHint: 'every word this console writes',

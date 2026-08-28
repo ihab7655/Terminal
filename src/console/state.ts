@@ -108,6 +108,8 @@ export type State = {
    * policy row, a language. One number, because only one place is ever open.
    */
   at: number;
+  /** How far down a full page has been scrolled. */
+  pageAt: number;
   /**
    * One execution, read whole, once the Inspector has been opened on it.
    *
@@ -170,6 +172,7 @@ export const emptyState = (): State => ({
   record: null,
   recordAt: 0,
   at: 0,
+  pageAt: 0,
   inspecting: null,
   capabilities: null,
   configuration: null,

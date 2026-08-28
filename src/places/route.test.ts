@@ -32,7 +32,7 @@ const KEYS: Array<[string, Press]> = [
 
 const STATES: Array<[string, Where]> = [
   ['the console', where()],
-  ['a place open', where({place: 'keys'})],
+  ['a place open', where({place: 'help'})],
   ['the launcher up', where({launcher: true})],
   ['a goal running', where({running: true})],
   ['a call waiting', where({waiting: true, running: true})],

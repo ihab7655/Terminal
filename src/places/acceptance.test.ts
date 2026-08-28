@@ -89,9 +89,45 @@ console.log('\nthe places that offer a choice take one');
   ok('each has a cursor AND an action', noAction.length === 0, noAction);
 
   // And the ones that are references take neither, on purpose.
-  const reference = ['keys', 'workspace', 'engine', 'settings', 'inspector', 'capabilities'];
+  const reference = ['help', 'workspace', 'engine', 'settings', 'inspector', 'capabilities'];
   ok('a reference place still answers Esc',
     reference.every(id => route(key({name: 'escape'}), where({place: id})).do === 'close-place'));
+}
+
+console.log('\nthe help page is a page: a hierarchy, and it sheds nothing');
+{
+  const {en} = await import('../i18n/en.js');
+  const {ar} = await import('../i18n/ar.js');
+  for (const [lang, cat] of [['en', en], ['ar', ar]] as const) {
+    const keys = cat.help.sections.flatMap(s => [s.name, ...s.entries.map(e => e.key)]);
+    const words = cat.help.sections.flatMap(s => s.entries.map(e => e.does.split(/\s+/)));
+    const bad: string[] = [];
+    for (const [w, h] of [[100, 34], [64, 18], [44, 16], [30, 10]] as const) {
+      at(w, h);
+      const all: string[] = [];
+      for (let off = 0; off < 300; off++)
+        all.push(...frame({...emptyState(), place: 'help', language: lang, pageAt: off, now: 0} as State)
+          .rows.map(plain));
+      const seen = all.join('\n');
+      if (keys.some(k => !seen.includes(k))) bad.push(`${w}x${h}: a key or section is unreachable`);
+      // Every WORD of every description, so a truncated sentence is caught —
+      // a help page that cuts the explanation a person opened it for is worse
+      // than one that is merely long.
+      if (words.some(ws => !ws.every(x => seen.includes(x)))) bad.push(`${w}x${h}: a description is cut`);
+      if (all.some(r => columnsOf(r) > w)) bad.push(`${w}x${h}: a row overflows`);
+    }
+    ok(`${lang}: every key and every word of every description is reachable`, bad.length === 0, bad);
+  }
+
+  // The hierarchy itself: a key stands alone on its line, and what it does is
+  // on the line beneath — never glued together into a table a reader decodes.
+  at(100, 40);
+  const rows = frame({...emptyState(), place: 'help', now: 0} as State).rows.map(plain);
+  const keyLine = rows.findIndex(r => r.trim() === 'Enter');
+  ok('a key is alone on its line', keyLine > 0);
+  ok('and what it does is on the next one',
+    (rows[keyLine + 1] ?? '').includes('Open or choose'), rows[keyLine + 1]);
+  ok('and the page names itself', rows.some(r => r.includes('OVERYOS / HELP')));
 }
 
 console.log('\nEsc always gets you out');

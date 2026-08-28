@@ -63,7 +63,7 @@ export function route(k: Press, w: Where): Act {
   if (k.ctrl && k.text === 'k') return {do: 'open-launcher'};
   if (k.ctrl && k.text === 'p') return {do: 'open-place', place: 'policy'};
   // `?` only on an empty line, so a question mark inside a sentence stays one.
-  if (!k.ctrl && k.text === '?' && w.composerEmpty) return {do: 'open-place', place: 'keys'};
+  if (!k.ctrl && k.text === '?' && w.composerEmpty) return {do: 'open-place', place: 'help'};
 
   // These letters answer a held call only while one is held; every other
   // moment they are ordinary text. A `y` typed before a request exists is just

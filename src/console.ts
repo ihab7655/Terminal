@@ -202,7 +202,21 @@ export function frame(state: State): {rows: string[]; view: Viewport} {
   // The window is taken by `windowOnto`, the same function the transcript uses,
   // anchored so the row under the cursor is always inside it. Nothing is shed;
   // what does not fit is scrolled past and said.
-  const over = state.place ? placeRows(state, width) : launcherUp(state) ? launcherRows(state, width) : null;
+  // A FULL PAGE replaces the body outright and scrolls on its own — it is
+  // something you go to and read, not an answer to a question you had while
+  // reading. Everything else sits over the bottom rows.
+  const page = PLACES.find(p => p.id === state.place && p.full);
+  if (page) {
+    const content = helpPage(state, width);
+    const shown = windowOnto(content, {offset: state.pageAt, following: false}, bodyRows);
+    const out = [...shown.rows];
+    while (out.length < bodyRows) out.push('');
+    if (shown.above > 0) out[0] = row(width, tint(`  ↑ ${shown.above} above`, colour.dim));
+    if (shown.below > 0) out[out.length - 1] = row(width, tint(`  ↓ ${shown.below} below`, colour.dim));
+    for (let i = 0; i < bodyRows; i++) body[i] = out[i]!;
+  }
+
+  const over = !page && state.place ? placeRows(state, width) : !page && launcherUp(state) ? launcherRows(state, width) : null;
   if (over !== null) {
     const room = Math.min(body.length, over.rows.length);
     // Follow the cursor: keep it in view, and prefer showing what is after it.
@@ -300,8 +314,8 @@ function placeRows(state: State, width: number): {rows: string[]; cursor: number
   const rows = [rail(width, 'section', place.name(say), place.hint(say))];
 
   switch (place.id) {
-    case 'keys':
-      for (const [k, what] of say.keySheet) rows.push(line(`${k}   ${what}`, colour.muted));
+    case 'help':
+      // Drawn by helpPage() — a full page, not a row list.
       break;
     case 'mode':
       (['automatic', 'approval', 'plan'] as const).forEach((m, i) => {
@@ -431,6 +445,44 @@ function placeRows(state: State, width: number): {rows: string[]; cursor: number
   // The row that must stay in view. A place with no cursor anchors at its
   // top; one with a list follows the row a person is on.
   return {rows, cursor: cursorOf(state)};
+}
+
+/**
+ * THE HELP PAGE — a page, not a panel.
+ *
+ * The hierarchy is the design: SECTION, then the KEY on a line of its own in
+ * the accent colour, then what it does beneath it, quieter. A reader's eye asks
+ * "which key?" and then "what does it do?", in that order, and a key glued to
+ * its sentence on one line makes them decode a table instead.
+ *
+ * Every row is content: nothing here measures the window, and the page scrolls
+ * like the transcript when it is longer than the space.
+ */
+function helpPage(state: State, width: number): string[] {
+  const say = catalogueFor(state.language);
+  const rows: string[] = [];
+  const pad = ' '.repeat(INDENT);
+
+  rows.push(row(width, pad, tint(say.help.title, colour.ink, true)));
+  rows.push(row(width, pad, tint(say.help.subtitle, colour.muted)));
+
+  for (const section of say.help.sections) {
+    rows.push('');
+    rows.push(row(width, pad, tint(section.name, colour.cyanSoft)));
+    rows.push('');
+    for (const entry of section.entries) {
+      rows.push(row(width, pad, '  ', tint(entry.key, colour.cyan, true)));
+      // WRAPPED, never cut. A narrow window used to truncate the explanation —
+      // a help page that sheds the very sentence a person opened it for. `wrap`
+      // is the terminal layer's own, and it measures the real width; the indent
+      // it is given back is the same one the key sits on, so a description that
+      // runs to two lines still reads as one entry.
+      for (const line of wrap(entry.does, Math.max(8, width - INDENT - 2)))
+        rows.push(row(width, pad, '  ', tint(line, colour.muted)));
+      rows.push('');
+    }
+  }
+  return rows;
 }
 
 /** The launcher: one row per place, under a rail of its own. */

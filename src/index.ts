@@ -283,6 +283,14 @@ function key(k: Key) {
     // three showed their lists and did nothing with a keypress — the gap
     // between a screen that RENDERS and one that WORKS, found by pressing
     // Enter in each rather than by looking at them.
+    // A full page scrolls with the same keys the transcript does — it is a
+    // page, and a page is read by moving through it.
+    if (state.place === 'help') {
+      const step = k.name === 'pageDown' ? 10 : k.name === 'down' ? 1 : k.name === 'pageUp' ? -10 : k.name === 'up' ? -1 : 0;
+      if (step !== 0) { edit(s => ({...s, pageAt: Math.max(0, s.pageAt + step)})); return; }
+      if (k.name === 'home') { edit(s => ({...s, pageAt: 0})); return; }
+    }
+
     if (state.place === 'mode' || state.place === 'policy' || state.place === 'language') {
       const rows =
         state.place === 'mode' ? 3
@@ -386,6 +394,7 @@ function key(k: Key) {
         // History is READ when it is opened, never held live: the event stream
         // is live-only and does not survive the process, so what happened
         // before comes from the engine's store or from nowhere.
+        if (place.id === 'help') edit(s => ({...s, pageAt: 0}));
         if (place.id === 'mode')
           edit(s => ({...s, at: ['automatic', 'approval', 'plan'].indexOf(s.mode)}));
         if (place.id === 'language')
@@ -449,7 +458,7 @@ function key(k: Key) {
     // `?` only on an empty line, so a question mark inside a sentence is a
     // question mark. The composer offers it exactly while it is free to mean
     // this, and stops offering it the moment a person types.
-    edit(s => ({...s, place: 'keys'}));
+    edit(s => ({...s, place: 'help'}));
     return;
   }
 

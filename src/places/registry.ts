@@ -10,18 +10,27 @@ import type {Catalogue} from '../i18n/catalogue.js';
 // A place's NUMBER is its own, not its position in a filtered list — so it does
 // not move as a query narrows, and the number a person learned stays true.
 
-export type PlaceId = 'keys' | 'mode' | 'policy' | 'language' | 'workspace' | 'engine' | 'history' | 'inspector' | 'capabilities' | 'profiles' | 'settings' | 'conversations';
+export type PlaceId = 'help' | 'mode' | 'policy' | 'language' | 'workspace' | 'engine' | 'history' | 'inspector' | 'capabilities' | 'profiles' | 'settings' | 'conversations';
 
 export type Place = {
   readonly id: PlaceId;
   readonly number: number;
+  /**
+   * A FULL PAGE rather than an overlay at the foot of the transcript.
+   *
+   * Most places answer a question you had while reading — they sit over the
+   * bottom rows and leave the transcript above them. A page is different: it
+   * is something you go to and read, so it takes the whole body and scrolls on
+   * its own.
+   */
+  readonly full?: boolean;
   /** How this place names itself, in the language in use. */
   name(say: Catalogue): string;
   hint(say: Catalogue): string;
 };
 
 export const PLACES: readonly Place[] = [
-  {id: 'keys',      number: 1, name: s => s.places.keys,      hint: s => s.places.keysHint},
+  {id: 'help',      number: 1, name: s => s.places.help,      hint: s => s.places.helpHint, full: true},
   {id: 'mode',      number: 2, name: s => s.places.mode,      hint: s => s.places.modeHint},
   {id: 'policy',    number: 3, name: s => s.places.policy,    hint: s => s.places.policyHint},
   {id: 'language',  number: 4, name: s => s.places.language,  hint: s => s.places.languageHint},

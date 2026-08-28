@@ -86,6 +86,21 @@ export type Catalogue = {
     readonly guardian: string;
     readonly nothing: string;
   };
+  /**
+   * The help page: sections, and inside each a key with what it does.
+   *
+   * Declared as structure rather than as lines, so the page can lay it out as
+   * a hierarchy — section, then key, then description — instead of a caller
+   * gluing a key and a sentence onto one line.
+   */
+  readonly help: {
+    readonly title: string;
+    readonly subtitle: string;
+    readonly sections: ReadonlyArray<{
+      readonly name: string;
+      readonly entries: ReadonlyArray<{readonly key: string; readonly does: string}>;
+    }>;
+  };
   readonly keySheet: ReadonlyArray<readonly [string, string]>;
   readonly modes: {
     readonly automatic: string;
@@ -139,7 +154,7 @@ export type Catalogue = {
 
   readonly places: {
     readonly title: string;
-    readonly keys: string; readonly keysHint: string;
+    readonly help: string; readonly helpHint: string;
     readonly mode: string; readonly modeHint: string;
     readonly policy: string; readonly policyHint: string;
     readonly language: string; readonly languageHint: string;
