@@ -13,6 +13,7 @@ import {
   type State
 } from './console.js';
 import {isFailure, openEngine, type Engine} from './engine.js';
+import {shortWorkspace, standing} from './session.js';
 import {next as newerInHistory, previous as olderInHistory, remember} from './history.js';
 import {onKey, type Key} from './keys.js';
 import {advance, openingRows, skipOpening, startOpening, TICK_MS, type Opening} from './opening.js';
@@ -30,11 +31,20 @@ import {paint, releaseScreen, screenSize, takeScreen} from './screen.js';
 // that is the whole of it.
 
 let opening: Opening = startOpening();
-let state: State = emptyState();
+// The workspace is on the rail from the first frame — it is where files land,
+// and a person should never have to discover that afterwards.
+let state: State = {...emptyState(), workspace: shortWorkspace(standing().workspace)};
 
 // The engine, once it answers. Absent means the console is usable and says so
 // when asked to do something that needs one — not that it is broken.
 let engine: Engine | null = null;
+
+// Established once, before anything is submitted, and never re-derived: every
+// goal this console sends belongs to one conversation and one workspace.
+// A remembered session id would be continued here once settings exist; until
+// then each launch is its own conversation, which is still one more than the
+// engine had before.
+const here = standing();
 // The engine is opened while the opening plays, and a person can type before it
 // answers. Recorded here rather than lost: "no engine" is only true once the
 // door has actually reported, and saying it while the engine is still opening
@@ -244,7 +254,7 @@ async function ask(goal: string): Promise<void> {
   const goalId = randomUUID();
   startedRunning(goalId);
   void engine
-    .submit(goal, goalId)
+    .submit({goal, id: goalId, ...here})
     .catch((err: unknown) => {
       add({
         kind: 'noted',

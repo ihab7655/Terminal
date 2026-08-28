@@ -22,6 +22,19 @@ import {makeCancellation} from './cancel.js';
 const DEFAULT_ENGINE =
   process.env['ENGINE_PATH'] ?? '/home/spark/agent-engine/packages/engine-core/dist/index.js';
 
+import type {Standing} from './session.js';
+
+/** What one goal submission carries. The console names the goal itself. */
+export type Submission = Standing & {
+  readonly goal: string;
+  /**
+   * The console's own id for this run, honoured by the engine as given
+   * (main-brain.ts:263, `req.id || randomUUID()`) — which is what lets Esc
+   * stop a goal before a single event has arrived.
+   */
+  readonly id: string;
+};
+
 export type Engine = {
   /** Every execution event, already narrowed by the engine's own contract. */
   watch(handler: (event: EngineEvent) => void): () => void;
@@ -33,7 +46,7 @@ export type Engine = {
    * id from the first millisecond can stop the goal before a single event has
    * arrived — the window where a stop is worth most.
    */
-  submit(goal: string, goalId: string): Promise<{success: boolean; status: string}>;
+  submit(req: Submission): Promise<{success: boolean; status: string}>;
   /**
    * Stop a running goal at the engine's next boundary.
    *
@@ -161,14 +174,26 @@ export async function openEngine(enginePath = DEFAULT_ENGINE): Promise<Engine | 
       // completion.finished before rethrowing, so the screen is told by the
       // event; here the signal is simply absorbed by the one who threw it.
       // Anything else still rejects, and the caller still sees it.
-      submit: async (goal, goalId) => {
+      submit: async req => {
         try {
           const result = await (
             app['executeGoal'] as (r: {
               goal: string;
               id: string;
+              sessionId: string;
+              workspaceDir: string;
             }) => Promise<{success: boolean; status: string}>
-          )({goal, id: goalId});
+          )({
+            goal: req.goal,
+            id: req.id,
+            // Both are DECLARED on GoalRequest already (brain/types.ts:45), and
+            // `sessionId` is declared required there. Sending them is host work
+            // and changes nothing in the engine — what changes is that the
+            // engine can now read this console's messages as a conversation,
+            // and that where work lands is stated rather than defaulted.
+            sessionId: req.sessionId,
+            workspaceDir: req.workspace
+          });
           return {success: result?.success ?? false, status: result?.status ?? 'unknown'};
         } catch (error) {
           if (!cancellation.owns(error)) throw error;

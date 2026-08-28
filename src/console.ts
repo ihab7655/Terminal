@@ -118,6 +118,14 @@ export type State = {
    * the same trail behind them.
    */
   stoppable: boolean;
+  /**
+   * Where work lands, as it reads on a rail.
+   *
+   * On the closing rail permanently, beside how the console runs, because these
+   * are the two facts a person must never have to go and look up — and because
+   * the engine's tools anchor here whether or not anyone was told.
+   */
+  workspace: string;
 };
 
 export const emptyState = (): State => ({
@@ -129,7 +137,8 @@ export const emptyState = (): State => ({
   now: Date.now(),
   history: NO_HISTORY,
   open: new Set<string>(),
-  stoppable: false
+  stoppable: false,
+  workspace: ''
 });
 
 const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -556,21 +565,34 @@ function footerRows(state: State, width: number, below: number): string[] {
   const prompt = tint('  › ', colour.amber);
   const line =
     state.input.length === 0
-      ? prompt + INVERSE + ' ' + RESET + tint(' say something to the engine', colour.muted)
+      ? prompt + INVERSE + ' ' + RESET + tint(' say something to the engine', colour.muted) +
+        tint('        ? keys', colour.dim)
       : prompt + colour.ink + before + INVERSE + at + RESET + colour.ink + after + RESET;
 
+  // ── WHAT THE CLOSING RAIL CARRIES ──────────────────────────────────────────
+  //
+  // It used to be a list of four keys, always, whether or not any of them
+  // applied — a strip of technical text under the one part of the screen that
+  // should feel like writing. A key that is always shown stops being read, and
+  // it cost the row that now carries something a person cannot work without.
+  //
+  // So the rail carries FACTS at its left — where work lands — and at its right
+  // AT MOST ONE key: the one that applies right now. That rule is not new here;
+  // the old rail already offered `Esc stops` only while something was
+  // stoppable. This applies it to all of them, which is what empties the row.
+  //
+  // Everything else lives behind `?`, offered in the composer's own unused
+  // space and gone the moment a person types.
   const folded = state.items.some(i => i.kind === 'did' && foldable(i));
-  // Esc is offered only while something is running — the one key here that is
-  // sometimes meaningless, and a key that does nothing should not be advertised.
-  const quit = state.stoppable ? 'Esc stops · Ctrl+C quit' : 'Ctrl+C quit';
-  // Offered only once there is something to walk back to, same rule as Esc.
-  const recall = state.history.entries.length > 0 ? '↑↓ recalls · ' : '';
-  const keys =
+  const nowKey =
     below > 0
-      ? `${below} row${below === 1 ? '' : 's'} below · PgDn follows again · ${quit}`
-      : folded
-        ? `Tab ${state.open.size > 0 ? 'folds' : 'unfolds'} output · click a row · ${recall}${quit}`
-        : `${recall}PgUp/PgDn scroll · Home/End jump · Enter sends · ${quit}`;
+      ? `${below} row${below === 1 ? '' : 's'} below · PgDn`
+      : state.stoppable
+        ? 'Esc stops'
+        : folded
+          ? `Tab ${state.open.size > 0 ? 'folds' : 'unfolds'}`
+          : '';
+  const keys = nowKey;
 
   // The keys ride the rail that closes the console, so they are returned bare —
   // the rail does the framing, and a second indent inside it would set them off
@@ -630,7 +652,7 @@ export function frame(state: State): {rows: string[]; view: Viewport} {
       ...body,
       divider,
       composer!,
-      rail(width, 'bottom', keys!)
+      rail(width, 'bottom', state.workspace, keys!)
     ],
     view
   };
