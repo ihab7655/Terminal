@@ -24,6 +24,13 @@ export const en: Catalogue = {
     folds: 'Tab folds',
     rowsBelow: {one: '{n} row below · PgDn', other: '{n} rows below · PgDn'}
   },
+  planned: {
+    heading: 'the plan it produced',
+    nothingRan: 'no tool was called',
+    judgedAgainst: 'judged against:',
+    howToRun: 'switch to automatic and ask again to run this'
+  },
+
   asked: {
     hint: 'it says this is what it will do',
     once: 'allow once',

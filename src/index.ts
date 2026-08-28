@@ -74,6 +74,14 @@ const live: Live = {
       });
       edit(s => ({...s, waiting: waiting.length}));
     }),
+  planned: work => {
+    add({
+      kind: 'planned',
+      id: `planned-${work.goalId}-${work.attempt}`,
+      tasks: work.tasks,
+      contract: work.contract
+    });
+  },
   refused: ({toolName, reason}) => {
     add({kind: 'noted', id: `refused-${Date.now()}-${toolName}`, lines: [`refused ${toolName} — ${reason}`]});
   },

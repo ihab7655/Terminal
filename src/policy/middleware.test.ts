@@ -16,6 +16,7 @@ const harness = (mode: Mode, over: Partial<EffectTable> = {}, answer: Answer = '
   const asked: ApprovalRequest[] = [];
   const kept: Array<[ApprovalRequest, string]> = [];
   const refusals: Array<{toolName: string; reason: string}> = [];
+  const plans: Array<{goalId: string; tasks: readonly unknown[]; contract: readonly string[]}> = [];
   const standing: Standing[] = [];
   const live: Live = {
     mode: () => mode,
@@ -24,9 +25,10 @@ const harness = (mode: Mode, over: Partial<EffectTable> = {}, answer: Answer = '
     workspace: () => '~/x',
     ask: async r => { asked.push(r); return answer; },
     remember: (r, a) => void kept.push([r, a]),
-    refused: r => void refusals.push(r)
+    refused: r => void refusals.push(r),
+    planned: w => void plans.push(w)
   };
-  return {control: makeControl(Signal, live), asked, kept, standing, refusals};
+  return {control: makeControl(Signal, live), asked, kept, standing, refusals, plans};
 };
 
 const call = (over: Record<string, unknown> = {}) => ({
@@ -34,7 +36,7 @@ const call = (over: Record<string, unknown> = {}) => ({
   effects: [{id: 'process:spawn', target: 'npm test'}], ...over
 });
 const mw = (h: ReturnType<typeof harness>) => h.control.middleware as {
-  beforePlanExecution(c: {goalId: string}): void;
+  beforePlanExecution(c: Record<string, unknown>): void;
   beforeWave(c: {goalId: string}): void;
   beforeToolCall(c: Record<string, unknown>): Promise<{allow: boolean; reason?: string}>;
 };
@@ -58,9 +60,17 @@ console.log('\nplan mode — a host abort after the plan exists, before anything
 {
   const h = harness('plan');
   let threw = false;
-  try { mw(h).beforePlanExecution({goalId: 'g9'}); } catch (e) { threw = h.control.owns(e); }
+  try {
+    mw(h).beforePlanExecution({
+      goalId: 'g9', attempt: 1,
+      taskPlan: {childTasks: [{title: 'write a.py', targetFiles: ['a.py']}, {title: 'run it'}]},
+      goalContract: {requirements: [{type: 'IMPLEMENTATION_COMPLETE'}]}
+    } as never);
+  } catch (e) { threw = h.control.owns(e); }
   ok('the plan boundary aborts', threw);
   ok('and the goal is remembered as planned, not as stopped', h.control.planOnly('g9'));
+  ok('and the plan itself is reported — not a prediction, the real thing',
+    h.plans.length === 1 && h.plans[0]!.goalId === 'g9');
   ok('a goal that ran is not', !h.control.planOnly('g1'));
 }
 {

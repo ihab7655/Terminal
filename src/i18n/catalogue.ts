@@ -63,6 +63,13 @@ export type Catalogue = {
     readonly rowsBelow: Plural;
   };
 
+  readonly planned: {
+    readonly heading: string;
+    readonly nothingRan: string;
+    readonly judgedAgainst: string;
+    readonly howToRun: string;
+  };
+
   readonly asked: {
     readonly hint: string;
     readonly once: string;

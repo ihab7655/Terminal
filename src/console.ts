@@ -44,6 +44,19 @@ export type Change = {readonly sign: '+' | '-'; readonly text: string};
 
 export type Item =
   /**
+   * The plan the engine produced, when it was asked not to run it.
+   *
+   * Not a preview and not a prediction: `beforePlanExecution` fires after the
+   * plan exists, so these are the tasks it decided on and the contract it
+   * froze. The count of tool calls behind this row is zero.
+   */
+  | {
+      kind: 'planned';
+      id: string;
+      tasks: ReadonlyArray<{title: string; targets: readonly string[]}>;
+      contract: readonly string[];
+    }
+  /**
    * A call the engine is holding, and what it wants permission for.
    *
    * An overlay in the console rather than a place to go to: the reason to say
@@ -358,6 +371,25 @@ function itemRows(item: Item, state: State, width: number, verbs: number): strin
     const detail = [item.detail, elapsed].filter(Boolean).join(' · ');
     const body = fit(detail ? `${item.text} · ${detail}` : item.text, Math.max(8, width - left));
     return [head + tint(body, colour.muted)];
+  }
+
+  if (item.kind === 'planned') {
+    const say = catalogueFor(state.language);
+    const left = INDENT + MARK;
+    const room = Math.max(8, width - left);
+    const rows = [
+      ' '.repeat(INDENT) + tint('▸', colour.amber) + ' ' +
+        tint(fit(say.planned.heading, room), colour.ink) +
+        tint(' · ' + say.planned.nothingRan, colour.dim)
+    ];
+    item.tasks.forEach((t, i) => {
+      const targets = t.targets.length > 0 ? ` · ${t.targets.join(' ')}` : '';
+      rows.push(' '.repeat(left) + tint(fit(`${String(i + 1).padStart(2, '0')} ${t.title}${targets}`, room), colour.ink));
+    });
+    if (item.contract.length > 0)
+      rows.push(' '.repeat(left) + tint(fit(`${say.planned.judgedAgainst} ${item.contract.join(' · ')}`, room), colour.muted));
+    rows.push(' '.repeat(left) + tint(fit(say.planned.howToRun, room), colour.dim));
+    return rows;
   }
 
   // ── A HELD CALL ─────────────────────────────────────────────────────────

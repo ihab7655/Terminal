@@ -49,6 +49,13 @@ export const ar: Catalogue = {
       other: '{n} سطر تحت · PgDn'
     }
   },
+  planned: {
+    heading: 'الخطّة التي أنتجها',
+    nothingRan: 'لم تُستدعَ أيّ أداة',
+    judgedAgainst: 'يُحكَم عليها بـ:',
+    howToRun: 'حوّل إلى تلقائي واطلبها ثانيةً لتُنفَّذ'
+  },
+
   asked: {
     hint: 'يقول إن هذا ما سيفعله',
     once: 'اسمح مرّة',

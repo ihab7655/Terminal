@@ -39,6 +39,14 @@ export type ApprovalRequest = {
 /** How a person answered. `once` and `refuse` are this call; the rest are kept. */
 export type Answer = 'once' | 'command' | 'row' | 'refuse';
 
+/** What the engine had decided to do, reported instead of done. */
+export type PlannedWork = {
+  readonly goalId: string;
+  readonly tasks: ReadonlyArray<{readonly title: string; readonly targets: readonly string[]}>;
+  readonly contract: readonly string[];
+  readonly attempt: number;
+};
+
 /** What the console must supply for a decision to be made. */
 export type Live = {
   mode(): Mode;
@@ -49,6 +57,15 @@ export type Live = {
   ask(request: ApprovalRequest): Promise<Answer>;
   /** A person said `keep this` — the console persists it and says so. */
   remember(request: ApprovalRequest, answer: 'command' | 'row'): void;
+  /**
+   * The plan the engine produced, in plan mode, before anything ran.
+   *
+   * `beforePlanExecution` fires AFTER the plan exists and BEFORE any tool call,
+   * so its context carries the real thing: the tasks the engine decided on and
+   * the contract it froze. Nothing here is predicted — a plan mode that showed
+   * a guess would be a simulation, which this is not.
+   */
+  planned(plan: PlannedWork): void;
   /**
    * The console refused a call by its own policy.
    *
@@ -98,12 +115,27 @@ export function makeControl(Signal: new (message: string) => Error, live: Live):
     owns: error => error instanceof GoalCancelled || error instanceof PlanOnly,
     planOnly: goalId => planned.has(goalId),
     middleware: {
-      beforePlanExecution(ctx: {goalId: string}) {
+      beforePlanExecution(ctx: {
+        goalId: string;
+        attempt?: number;
+        taskPlan?: {childTasks?: ReadonlyArray<{title?: string; targetFiles?: string[]}>};
+        goalContract?: {requirements?: ReadonlyArray<{type?: string} | string>};
+      }) {
         stopIfMarked(ctx.goalId);
-        if (live.mode() === 'plan') {
-          planned.add(ctx.goalId);
-          throw new PlanOnly('plan mode — the plan was produced and nothing was run');
-        }
+        if (live.mode() !== 'plan') return;
+        planned.add(ctx.goalId);
+        live.planned({
+          goalId: ctx.goalId,
+          attempt: ctx.attempt ?? 1,
+          tasks: (ctx.taskPlan?.childTasks ?? []).map(t => ({
+            title: t.title ?? '',
+            targets: t.targetFiles ?? []
+          })),
+          contract: (ctx.goalContract?.requirements ?? []).map(r =>
+            typeof r === 'string' ? r : (r.type ?? '')
+          )
+        });
+        throw new PlanOnly('plan mode — the plan was produced and nothing was run');
       },
 
       beforeWave(ctx: {goalId: string}) {
