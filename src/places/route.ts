@@ -14,6 +14,14 @@
 export type Where = {
   readonly openingDone: boolean;
   readonly place: PlaceId | null;
+  /**
+   * Whether something is open INSIDE the place — a working location opened in
+   * Conversations is the first, and Esc leaves it before it leaves the place.
+   *
+   * The rule does not change, it just has one more layer to walk: Esc clears
+   * the innermost thing. A place that is not inside anything ignores this.
+   */
+  readonly inside: boolean;
   readonly launcher: boolean;
   readonly running: boolean;
   readonly waiting: boolean;
@@ -29,6 +37,7 @@ export type Act =
   | {do: 'close-launcher'}
   | {do: 'open-place'; place: PlaceId}
   | {do: 'close-place'}
+  | {do: 'close-inside'}
   | {do: 'choose'; by: -1 | 1}
   | {do: 'confirm'}
   | {do: 'answer'; key: string}
@@ -45,6 +54,10 @@ export function route(k: Press, w: Where): Act {
   if (!w.openingDone) return {do: 'skip-opening'};
 
   if (w.place !== null) {
+    // Esc leaves what is open INSIDE the place first. `^K` still leaves the
+    // place whole and raises the launcher: it is not a way back, it is a way
+    // somewhere else.
+    if (k.name === 'escape' && w.inside) return {do: 'close-inside'};
     if (k.name === 'escape' || (k.ctrl && k.text === 'k')) return {do: 'close-place'};
     if (k.name === 'up') return {do: 'choose', by: -1};
     if (k.name === 'down') return {do: 'choose', by: 1};

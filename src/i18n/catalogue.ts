@@ -168,6 +168,14 @@ export type Catalogue = {
     readonly conversations: string; readonly conversationsHint: string;
     readonly thisSession: string;
     readonly resume: string;
+    /** The first level of Conversations: where the work was done. */
+    readonly whereWorked: string;
+    readonly conversationsHere: Plural;
+    readonly openLocation: string;
+    /** A conversation that has not begun, and the row that starts one. */
+    readonly newConversation: string;
+    readonly startNew: string;
+    readonly startedNew: string;
     readonly pickAGoal: string;
     readonly openARow: string;
     readonly loading: string;

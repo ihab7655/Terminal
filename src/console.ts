@@ -27,6 +27,7 @@ import type {Mode} from './settings/store.js';
 import {matching, PLACES, queryOf, type Place, type PlaceId} from './places/registry.js';
 import {HANG, PAD, choice, field, gap, heading, note, paragraph, row, subtitle} from './console/surface.js';
 import {profiles as PROFILES} from './theme/profiles.js';
+import {inLocation as conversationsIn, locations, workspaceName} from './session.js';
 
 // The console: content in, one frame out.
 //
@@ -289,12 +290,18 @@ function status(state: State): string {
  * cannot point at.
  */
 
+/** The conversations of the location Conversations is inside, if it is. */
+const inLocationRows = (state: State) =>
+  state.inLocation === null || state.conversations === null
+    ? [] : conversationsIn(state.conversations, state.inLocation);
+
 /** Which row of an open place a person is on — 0 when it has no list. */
 const cursorOf = (state: State): number => {
   if (state.place === 'mode' || state.place === 'policy' || state.place === 'language')
     return state.at + 1;
   if (state.place === 'history') return state.recordAt + 1;
-  if (state.place === 'conversations') return state.conversationAt + 1;
+  if (state.place === 'conversations')
+    return (state.inLocation === null ? state.locationAt : state.conversationAt) + 1;
   if (state.place === 'profiles') return PROFILES.findIndex(p => p.id === state.profile) + 1;
   return 0;
 };
@@ -352,7 +359,11 @@ function placeRows(state: State, width: number): {rows: string[]; cursor: number
     // ── FACTS YOU READ ─────────────────────────────────────────────────────
     case 'workspace':
       rows.push(field(width, say.places.workspace, state.workspace));
-      rows.push(field(width, say.session, state.sessionId));
+      // A console that has not been spoken to has no conversation, and says
+      // that rather than an id — the engine holds no session under it yet.
+      rows.push(state.sessionId === null
+        ? field(width, say.session, say.places.newConversation, 'state')
+        : field(width, say.session, state.sessionId));
       break;
 
     case 'engine':
@@ -398,18 +409,52 @@ function placeRows(state: State, width: number): {rows: string[]; cursor: number
       rows.push(gap(), note(width, say.places.openARow));
       break;
 
-    case 'conversations':
+    // ── WHERE THE WORK WAS DONE, THEN WHAT WAS SAID THERE ──────────────────
+    //
+    // Two levels, because the first question anyone has about an old
+    // conversation is which piece of work it belonged to — a flat list mixes
+    // every project a person has ever opened this console in. Both levels are
+    // derived from the same rows the engine's record produced; neither holds a
+    // list of its own.
+    case 'conversations': {
       if (state.conversations === null) { rows.push(note(width, say.places.loading)); break; }
       if (state.conversations.length === 0) { rows.push(note(width, say.places.nothingYet)); break; }
-      state.conversations.forEach((c, i) =>
+
+      if (state.inLocation === null) {
+        const where = locations(state.conversations);
+        // Conversations exist but none says where it ran — goals sent before a
+        // host supplied a workspace. Nothing to stand in, and said as nothing
+        // rather than drawn as an empty list under a heading.
+        if (where.length === 0) { rows.push(note(width, say.places.nothingYet)); break; }
+        rows.push(subtitle(width, say.places.whereWorked), gap());
+        where.forEach((l, i) =>
+          rows.push(row(width, PAD,
+            tint(i === state.locationAt ? glyph.chosen : ' ', colour.cyan), ' ',
+            tint(l.at, colour.dim), '  ',
+            tint(say.plural(say.places.conversationsHere, l.conversations), colour.amber), '  ',
+            tint(workspaceName(l.workspace), i === state.locationAt ? colour.ink : colour.muted))));
+        rows.push(gap(), note(width, say.places.openLocation));
+        break;
+      }
+
+      rows.push(field(width, say.places.workspace, workspaceName(state.inLocation)), gap());
+      // The action first, and always in the same row: a list whose length
+      // changes must not move the one thing that starts something new.
+      rows.push(row(width, PAD,
+        tint(state.conversationAt === 0 ? glyph.chosen : ' ', colour.cyan), ' ',
+        tint('+ ' + say.places.startNew, state.conversationAt === 0 ? colour.ink : colour.cyanSoft)));
+      inLocationRows(state).forEach((c, i) => {
+        const on = state.conversationAt === i + 1;
         rows.push(row(width, PAD,
-          tint(i === state.conversationAt ? glyph.chosen : ' ', colour.cyan), ' ',
+          tint(on ? glyph.chosen : ' ', colour.cyan), ' ',
           tint(c.at, colour.dim), '  ',
           tint(String(c.goals).padStart(3), colour.amber), '  ',
-          tint(c.last, i === state.conversationAt ? colour.ink : colour.muted),
-          c.id === state.sessionId ? tint('  ·  ' + say.places.thisSession, colour.cyanSoft) : '')));
+          tint(c.last, on ? colour.ink : colour.muted),
+          c.id === state.sessionId ? tint('  ·  ' + say.places.thisSession, colour.cyanSoft) : ''));
+      });
       rows.push(gap(), note(width, say.places.resume));
       break;
+    }
 
     case 'inspector': {
       const r = state.inspecting;

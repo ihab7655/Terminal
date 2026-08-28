@@ -16,7 +16,7 @@ import {isFailure, openEngine, type Engine} from './engine.js';
 import {chosen, launcherUp, offered, surfaceRowAt} from './console.js';
 import {PLACES, queryOf} from './places/registry.js';
 import {route, type Where} from './places/route.js';
-import {workspaceName, standing} from './session.js';
+import {atLaunch, begun, fresh, inLocation, locations, resumed, workspaceName} from './session.js';
 import {load, save, type Settings, type Standing} from './settings/store.js';
 import {catalogues, catalogueFor} from './i18n/index.js';
 import type {Answer, ApprovalRequest, Live} from './policy/middleware.js';
@@ -50,8 +50,12 @@ let opening: Opening = startOpening();
 // preventing.
 const remembered = load();
 let settings: Settings = remembered.settings;
-let here = standing(settings.session.id ?? undefined);
-settings = {...settings, session: {id: here.sessionId}};
+// STARTING IS NOT RESUMING. A launch stands in a directory and talks to no
+// one: the first message begins a conversation, and choosing one in
+// Conversations is the only other thing that sets it. Nothing is read back
+// from the settings file, because nothing about a conversation is written to
+// it any more — see `session.ts` for what that silently did.
+let here = atLaunch();
 
 /** Everything waiting for an answer, oldest first. */
 type Waiting = {request: ApprovalRequest; answer: (a: Answer) => void};
@@ -241,6 +245,7 @@ async function leave(): Promise<never> {
 const whereWeAre = (): Where => ({
   openingDone: opening.done,
   place: state.place,
+  inside: state.place === 'conversations' && state.inLocation !== null,
   launcher: launcherUp(state),
   running: running.length > 0,
   waiting: waiting.length > 0,
@@ -266,8 +271,18 @@ function scrollOpen(delta: number): boolean {
     // its own selection is how a person loses the thing they were choosing.
     if (state.place === 'history')
       { edit(s => ({...s, recordAt: clampTo(s.recordAt + delta, s.record?.length ?? 0)})); return true; }
-    if (state.place === 'conversations')
-      { edit(s => ({...s, conversationAt: clampTo(s.conversationAt + delta, s.conversations?.length ?? 0)})); return true; }
+    if (state.place === 'conversations') {
+      const rows = state.conversations ?? [];
+      // The same two levels the place draws, and the same lengths: the
+      // locations, or that location's conversations plus the row that starts a
+      // new one.
+      if (state.inLocation === null)
+        edit(s => ({...s, locationAt: clampTo(s.locationAt + delta, locations(rows).length)}));
+      else
+        edit(s => ({...s, conversationAt:
+          clampTo(s.conversationAt + delta, inLocation(rows, state.inLocation!).length + 1)}));
+      return true;
+    }
     if (state.place === 'mode' || state.place === 'policy' || state.place === 'language') {
       const rows = state.place === 'mode' ? 3
         : state.place === 'policy' ? state.policy.length : state.languages.length;
@@ -326,6 +341,13 @@ function key(k: Key) {
   if (!opening.done) {
     // handled below — the opening owns every key until it ends
   } else if (state.place !== null) {
+    // A working location opened inside Conversations is an inner thing, and Esc
+    // clears the innermost first: back to the list of locations, not out of
+    // the place a person is standing in.
+    if (k.name === 'escape' && state.place === 'conversations' && state.inLocation !== null) {
+      edit(s => ({...s, inLocation: null, conversationAt: 0}));
+      return;
+    }
     if (k.name === 'escape' || (k.ctrl && k.text === 'k')) {
       edit(s => ({...s, place: null, confirming: null, input: '', caret: 0, launcher: {open: k.ctrl === true, at: 0}}));
       return;
@@ -393,32 +415,65 @@ function key(k: Key) {
         }
       }
     }
-    // ── CONTINUING A CONVERSATION ────────────────────────────────────────
+    // ── WHERE THE WORK WAS DONE, THEN WHAT WAS SAID THERE ────────────────
+    //
+    // Two levels. The first is the working locations the engine's record
+    // holds; the second is that location's conversations, with the row that
+    // starts a new one above them.
     //
     // A conversation IS the engine's session. Continuing one means sending the
     // next goal with that id — which is the whole of it: the engine then reads
     // the message with its own summary, compacted context and recent turns,
-    // because that is what it keys them on.
+    // because that is what it keys them on. It comes with its workspace,
+    // because continuing a conversation somewhere else would send the next
+    // goal into a different directory from every goal above it.
+    //
+    // Nothing here is remembered by the console. What was said is the engine's
+    // record; what is open is this screen's.
     //
     // The transcript is NOT repopulated. What was said in that conversation is
     // in the engine's record, not in this screen, and drawing rows the console
     // did not witness would be a transcript claiming to have seen something.
     if (state.place === 'conversations' && state.conversations !== null) {
-      if (k.name === 'up') { edit(s => ({...s, conversationAt: Math.max(0, s.conversationAt - 1)})); return; }
-      if (k.name === 'down') {
-        edit(s => ({...s, conversationAt: Math.min((s.conversations?.length ?? 1) - 1, s.conversationAt + 1)}));
+      const say = catalogueFor(settings.language);
+      const places = locations(state.conversations);
+      if (state.inLocation === null) {
+        if (k.name === 'up') { edit(s => ({...s, locationAt: Math.max(0, s.locationAt - 1)})); return; }
+        if (k.name === 'down')
+          { edit(s => ({...s, locationAt: Math.min(places.length - 1, s.locationAt + 1)})); return; }
+        if (k.name === 'enter') {
+          const l = places[state.locationAt];
+          if (l) edit(s => ({...s, inLocation: l.workspace, conversationAt: 0}));
+          return;
+        }
         return;
       }
+      const here_ = inLocation(state.conversations, state.inLocation);
+      if (k.name === 'up') { edit(s => ({...s, conversationAt: Math.max(0, s.conversationAt - 1)})); return; }
+      if (k.name === 'down')
+        { edit(s => ({...s, conversationAt: Math.min(here_.length, s.conversationAt + 1)})); return; }
       if (k.name === 'enter') {
-        const c = state.conversations[state.conversationAt];
-        if (c) {
-          here = {...here, sessionId: c.id};
-          settings = {...settings, session: {id: c.id}};
-          const trouble = save(settings);
-          edit(s => ({...s, place: null, sessionId: c.id}));
+        const where = state.inLocation;
+        // Row 0 starts a new one. It does NOT mint an id: it leaves the
+        // console in the state a fresh launch is in, standing in the chosen
+        // place, and the first message begins the conversation — the same one
+        // rule, so a new conversation means the same thing however it is
+        // reached.
+        if (state.conversationAt === 0) {
+          here = fresh(where);
+          edit(s => ({...s, place: null, inLocation: null, sessionId: null,
+                      workspace: workspaceName(where)}));
           add({kind: 'noted', id: `noted-${Date.now()}`,
-               lines: [`${catalogueFor(settings.language).places.conversations}: ${c.last}`]});
-          if (trouble) add({kind: 'noted', id: `noted-${Date.now()}-t`, lines: [trouble]});
+               lines: [`${say.places.startedNew} · ${workspaceName(where)}`]});
+          return;
+        }
+        const c = here_[state.conversationAt - 1];
+        if (c) {
+          here = resumed(here, c);
+          edit(s => ({...s, place: null, inLocation: null, sessionId: here.sessionId,
+                      workspace: workspaceName(here.workspace)}));
+          add({kind: 'noted', id: `noted-${Date.now()}`,
+               lines: [`${say.places.conversations}: ${c.last}`]});
         }
         return;
       }
@@ -468,7 +523,7 @@ function key(k: Key) {
           }
         }
         if (place.id === 'conversations' && engine) {
-          edit(s => ({...s, conversations: null, conversationAt: 0}));
+          edit(s => ({...s, conversations: null, inLocation: null, locationAt: 0, conversationAt: 0}));
           void engine.conversations(60)
             .then(rows => edit(s => ({...s, conversations: rows})))
             .catch(() => edit(s => ({...s, conversations: []})));
@@ -768,8 +823,22 @@ function pickRow(index: number): void {
   }
   if (state.place === 'history' && at < (state.record?.length ?? 0))
     return void edit(s => ({...s, recordAt: at}));
-  if (state.place === 'conversations' && at < (state.conversations?.length ?? 0))
-    return void edit(s => ({...s, conversationAt: at}));
+  if (state.place === 'conversations' && state.conversations !== null) {
+    // The first level has a subtitle and a gap of its own above the list, and
+    // the second a field and a gap — the rows the place draws before its list,
+    // counted here so a click lands on the row under the pointer.
+    const INSIDE_HEADER = 2;
+    if (state.inLocation === null) {
+      const rows = locations(state.conversations);
+      const on = at - INSIDE_HEADER;
+      if (on >= 0 && on < rows.length) edit(s => ({...s, locationAt: on}));
+      return;
+    }
+    const on = at - INSIDE_HEADER;
+    if (on >= 0 && on <= inLocation(state.conversations, state.inLocation).length)
+      edit(s => ({...s, conversationAt: on}));
+    return;
+  }
   if (state.place === 'profiles' && at < PROFILES.length) return void edit(s => ({...s, at}));
   if (state.place === 'mode' && at < 3) return void edit(s => ({...s, at}));
   if (state.place === 'policy' && at < state.policy.length) return void edit(s => ({...s, at}));
@@ -845,10 +914,25 @@ async function ask(goal: string): Promise<void> {
     add({kind: 'noted', id: `noted-${Date.now()}`, lines: [catalogueFor(settings.language).outcome.noEngineHere]});
     return;
   }
+  // ── THE FIRST MESSAGE BEGINS THE CONVERSATION ─────────────────────────────
+  //
+  // Not the launch, and not the row that says "new conversation": both of
+  // those leave the console with none, and this is the one place that mints
+  // one. An id that exists before there is anything in it would be a
+  // conversation the engine has never heard of — the session row is written
+  // when the first goal carrying it is saved.
+  //
+  // Shown as soon as it is real, so Workspace and Conversations name the
+  // conversation a person is actually in.
+  const talking = begun(here);
+  if (here.sessionId === null) {
+    here = talking;
+    edit(s => ({...s, sessionId: talking.sessionId}));
+  }
   const goalId = randomUUID();
   startedRunning(goalId);
   void engine
-    .submit({goal, id: goalId, ...here})
+    .submit({goal, id: goalId, ...talking})
     .catch((err: unknown) => {
       add({
         kind: 'noted',
@@ -932,7 +1016,10 @@ if (process.env['DEMO']) {
         return;
       }
       engine = opened;
-      edit(s => ({...s, engineFacts: [`engine · open`, `workspace · ${workspaceName(here.workspace)}`, `session · ${here.sessionId}`]}));
+      // No session line here: this list is a SNAPSHOT taken when the engine
+      // answered, and the conversation begins later and can change afterwards.
+      // Workspace shows it from live state, which cannot go stale.
+      edit(s => ({...s, engineFacts: [`engine · open`, `workspace · ${workspaceName(here.workspace)}`]}));
       // Every execution event, through the adapter, in the order it arrived.
       opened.watch(event => {
         // The catalogue in use at the moment the event arrives. An item is

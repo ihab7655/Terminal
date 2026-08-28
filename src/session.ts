@@ -1,4 +1,4 @@
-// ── Who the console is talking to, and where it is standing ─────────────────
+// ── WHO THE CONSOLE IS TALKING TO, AND WHERE IT IS STANDING ─────────────────
 //
 // Two facts the engine DECLARES as part of a goal and this console never sent.
 // Neither is new engine surface: `sessionId` and `workspaceDir` are both
@@ -15,35 +15,136 @@
 // mechanism works the moment a host supplies one.
 //
 // WHAT THE WORKSPACE BUYS. Unset, the engine's tools anchor to `process.cwd()`
-// — tools/registry.ts:132, filesystem.tool.ts:10, git.tool.ts:111. That is the
-// same directory the console was launched from, so the behaviour does not
-// change; what changes is that it is STATED. A person can see where files will
-// land before they ask for one, which a permission table is meaningless
-// without. The official CLI already does this (cli.ts:106).
+// — tools/registry.ts:132, filesystem.tool.ts:10, git.tool.ts:111. What
+// changes when it is SENT is that it is stated: `tool-caller.ts:179` injects
+// it as `args.__cwd` for every call, so where files land is a fact of the
+// goal rather than a property of the directory a terminal happened to be in.
+//
+// ── LAUNCHING IS NOT RESUMING ───────────────────────────────────────────────
+//
+// This file used to CONTINUE a remembered id: the console wrote its session
+// into its settings file and read it back at the next boot, so quitting and
+// starting again put you back in the conversation you had left, silently, on
+// an empty screen.
+//
+// It was wrong, and the record says how wrong. The settings file is per USER,
+// not per workspace, so one id followed a person between projects: session
+// f780a142 holds goals from a scratch workspace on 26 August and from
+// `/home/spark/Terminal` on 28 August — two days and two directories read by
+// the engine as one conversation, with a clean screen in front of it.
+//
+// So: a launch has NO conversation. The first message begins one, and that is
+// the only thing that ever does. Resuming is an act a person performs, in
+// Conversations, by choosing the one they mean — which is also what makes a
+// resume worth anything, because a person who chose it knows what is behind
+// them. Nothing about a conversation is remembered by this console: the
+// conversations themselves are the engine's record, and Conversations reads
+// them from it.
 
 import {randomUUID} from 'node:crypto';
 
 export type Standing = {
-  /** The conversation every goal from this console belongs to. */
+  /**
+   * The conversation every goal from this console belongs to, or `null` when
+   * there is not one yet — the ordinary state of a console that has just been
+   * started and has not been spoken to.
+   */
+  readonly sessionId: string | null;
+  /** Where work lands: the directory goals are sent against. */
+  readonly workspace: string;
+};
+
+/** A console that has just started: standing somewhere, talking to no one. */
+export function atLaunch(cwd = process.cwd()): Standing {
+  return {sessionId: null, workspace: cwd};
+}
+
+/** A console mid-conversation: the same standing, with the conversation real. */
+export type Talking = {
   readonly sessionId: string;
-  /** Where work lands. The directory the console was launched from. */
   readonly workspace: string;
 };
 
 /**
- * One session for the life of the console, or the one it was given.
+ * The conversation this message belongs to, begun if it does not exist.
  *
- * A remembered id is continued so a person who quits and comes back is still
- * in the same conversation — which is the whole reason the engine keeps one.
- * An absent or unusable id yields a fresh one rather than an error: not having
- * talked before is an ordinary state.
+ * Called at the one place a message becomes a goal, so an id exists only when
+ * there is something in it. A conversation is not a thing the console holds
+ * and might never use: the engine creates the session row when the first goal
+ * carrying the id is saved (`saveSession`, upserted), and a conversation with
+ * no goals is not a conversation anywhere.
  */
-export function standing(remembered?: string, cwd = process.cwd()): Standing {
-  const usable = typeof remembered === 'string' && UUID.test(remembered);
-  return {sessionId: usable ? remembered : randomUUID(), workspace: cwd};
+export function begun(now: Standing, mint: () => string = randomUUID): Talking {
+  return {sessionId: now.sessionId ?? mint(), workspace: now.workspace};
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/**
+ * Continue one, chosen. Its workspace comes with it.
+ *
+ * Where the work happened is part of what is being resumed — continuing a
+ * conversation while standing somewhere else would send the next goal into a
+ * different directory from every goal above it in the same session.
+ */
+export function resumed(now: Standing, chosen: {id: string; workspace: string | null}): Standing {
+  return {sessionId: chosen.id, workspace: chosen.workspace ?? now.workspace};
+}
+
+/**
+ * Start a new one, in a chosen place.
+ *
+ * The id is NOT minted here, and the absence is the design: this leaves the
+ * console in exactly the state a fresh launch is in, so "new conversation"
+ * means one thing in the whole console and the first message begins it either
+ * way. One rule, not two that could drift.
+ */
+export function fresh(workspace: string): Standing {
+  return {sessionId: null, workspace};
+}
+
+/** One conversation as Conversations reads it from the engine's record. */
+export type Conversation = {
+  readonly id: string;
+  readonly workspace: string | null;
+  readonly goals: number;
+  readonly last: string;
+  readonly at: string;
+};
+
+/** One working location, and how much was said there. */
+export type Location = {
+  readonly workspace: string;
+  readonly conversations: number;
+  readonly at: string;
+};
+
+/**
+ * WHERE THE WORK WAS DONE, before WHAT WAS SAID THERE.
+ *
+ * A flat list mixes conversations from every project a person has ever opened
+ * this console in, and the first question anyone actually has about an old
+ * conversation is which piece of work it belonged to. So the place asks that
+ * first, and this derives the answer from the rows themselves rather than from
+ * anything the console keeps: the engine records `workspace_path` per goal
+ * (LLD-E1), and a conversation is listed under the location its goals ran in.
+ *
+ * Newest first, by the most recent thing said in each — the order a person
+ * carries in their head.
+ */
+export function locations(rows: readonly Conversation[]): Location[] {
+  const byPath = new Map<string, {conversations: number; at: string}>();
+  for (const c of rows) {
+    if (c.workspace === null) continue;   // a goal with no workspace on record
+    const seen = byPath.get(c.workspace);
+    if (seen) { seen.conversations += 1; if (c.at > seen.at) seen.at = c.at; }
+    else byPath.set(c.workspace, {conversations: 1, at: c.at});
+  }
+  return [...byPath].map(([workspace, m]) => ({workspace, ...m})).sort((a, b) => (a.at < b.at ? 1 : -1));
+}
+
+/** The conversations that happened in one location, newest first. */
+export function inLocation(rows: readonly Conversation[], workspace: string): Conversation[] {
+  return rows.filter(c => c.workspace === workspace).sort((a, b) => (a.at < b.at ? 1 : -1));
+}
 
 /**
  * How the workspace READS — a naming decision, not a fitting one.

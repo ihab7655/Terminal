@@ -10,6 +10,7 @@ import type {PlaceId} from '../places/registry.js';
 import {START, type Viewport} from '../viewport.js';
 import {NO_HISTORY, type History} from '../history.js';
 import type {Item} from './items.js';
+import type {Conversation} from '../session.js';
 
 export type State = {
   /** Everything that has happened, oldest first. Nothing is ever removed. */
@@ -86,8 +87,15 @@ export type State = {
   policy: ReadonlyArray<readonly [string, string]>;
   /** The languages this console has, and how each names itself. */
   languages: ReadonlyArray<readonly [string, string]>;
-  /** The conversation every goal from this console belongs to. */
-  sessionId: string;
+  /**
+   * The conversation every goal from this console belongs to — `null` until
+   * the first message begins one.
+   *
+   * A launch is not a resume (`session.ts`): the console starts talking to no
+   * one, and the screen says so rather than showing an id for a conversation
+   * that has nothing in it and does not exist in the engine's record yet.
+   */
+  sessionId: string | null;
   /** What the engine was given, and whether it answered — lines, already said. */
   engineFacts: readonly string[];
   /**
@@ -133,9 +141,26 @@ export type State = {
   capabilities: ReadonlyArray<{name: string; category: string}> | null;
   /** What the engine was given, once Settings has been opened. Read only. */
   configuration: ReadonlyArray<readonly [string, string]> | null;
-  /** Sessions, newest first, with how many goals each holds. */
-  conversations: ReadonlyArray<{id: string; goals: number; last: string; at: string}> | null;
-  /** Which conversation the cursor is on — Enter continues it. */
+  /** Conversations on record, newest first, with how many goals each holds. */
+  conversations: readonly Conversation[] | null;
+  /**
+   * Which working location Conversations is inside, or `null` at its first
+   * level — the list of locations itself.
+   *
+   * The place asks WHERE the work was done before WHAT was said there, so it
+   * has two levels and this is which one is open. Esc leaves the inner one
+   * before it leaves the place, which is the same rule Esc already follows
+   * everywhere: clear the innermost thing.
+   */
+  inLocation: string | null;
+  /** Which location the cursor is on at the first level — Enter opens it. */
+  locationAt: number;
+  /**
+   * Which row the cursor is on inside a location.
+   *
+   * Row 0 is always "new conversation": the action is in the same place every
+   * time, above a list whose length changes.
+   */
   conversationAt: number;
   /** The way of working in use, and whether a hand edit has moved it since. */
   profile: string;
@@ -167,7 +192,7 @@ export const emptyState = (): State => ({
   launcher: {open: false, at: 0},
   policy: [],
   languages: [],
-  sessionId: '',
+  sessionId: null,
   engineFacts: [],
   record: null,
   recordAt: 0,
@@ -177,6 +202,8 @@ export const emptyState = (): State => ({
   capabilities: null,
   configuration: null,
   conversations: null,
+  inLocation: null,
+  locationAt: 0,
   conversationAt: 0,
   profile: 'phosphor',
   adjusted: false,

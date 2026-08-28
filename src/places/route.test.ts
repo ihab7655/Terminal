@@ -13,7 +13,7 @@ const ok = (name: string, cond: boolean, got?: unknown) => {
 
 const key = (over: Partial<Press> = {}): Press => ({name: '', text: '', ctrl: false, ...over});
 const where = (over: Partial<Where> = {}): Where => ({
-  openingDone: true, place: null, launcher: false,
+  openingDone: true, place: null, inside: false, launcher: false,
   running: false, waiting: false, composerEmpty: true, ...over
 });
 
@@ -33,6 +33,7 @@ const KEYS: Array<[string, Press]> = [
 const STATES: Array<[string, Where]> = [
   ['the console', where()],
   ['a place open', where({place: 'help'})],
+  ['a place with something open inside it', where({place: 'conversations', inside: true})],
   ['the launcher up', where({launcher: true})],
   ['a goal running', where({running: true})],
   ['a call waiting', where({waiting: true, running: true})],
@@ -53,6 +54,10 @@ ok('the opening swallows every other key, and only to skip itself',
 
 console.log('\nEsc clears the innermost thing, and nothing further');
 ok('a place first', table['Esc']!['a place open'] === 'close-place');
+ok('and what is open INSIDE a place before the place itself',
+  table['Esc']!['a place with something open inside it'] === 'close-inside');
+ok('but ^K still leaves the place whole — it is a way somewhere else, not back',
+  table['^K']!['a place with something open inside it'] === 'close-place');
 ok('then the launcher', table['Esc']!['the launcher up'] === 'close-launcher');
 ok('then the running goal', table['Esc']!['a goal running'] === 'stop-goal');
 ok('and with nothing open and nothing running it does nothing',

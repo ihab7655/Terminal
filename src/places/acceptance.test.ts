@@ -26,7 +26,7 @@ const at = (c: number, r: number) => {
 const key = (over: Record<string, unknown> = {}) =>
   ({name: '', text: '', ctrl: false, ...over}) as never;
 const where = (over: Record<string, unknown> = {}) =>
-  ({openingDone: true, place: null, launcher: false, running: false,
+  ({openingDone: true, place: null, inside: false, launcher: false, running: false,
     waiting: false, composerEmpty: true, ...over}) as never;
 
 // What the console holds when each place has real data behind it.
@@ -37,7 +37,10 @@ const filled: Partial<State> = {
   languages: [['en', 'English'], ['ar', 'العربية']],
   engineFacts: ['engine · open', 'session · abc-123'],
   record: [{id: 'g1', goal: 'build a thing', status: 'completed', at: '2026-08-28 06:00'}],
-  conversations: [{id: 's1', goals: 3, last: 'a real goal', at: '2026-08-28 05:00'}],
+  conversations: [
+    {id: 's1', workspace: '/home/spark/x', goals: 3, last: 'a real goal', at: '2026-08-28 05:00'},
+    {id: 's2', workspace: '/srv/app', goals: 1, last: 'somewhere else', at: '2026-08-27 05:00'}
+  ],
   capabilities: [{name: 'bash', category: 'Running commands'}],
   configuration: [['provider', 'deepseek'], ['api key', 'set · …29f2']],
   inspecting: {goalId: 'g1', status: 'completed', attempts: 1, durationMs: 96000,
@@ -92,6 +95,67 @@ console.log('\nthe places that offer a choice take one');
   const reference = ['help', 'workspace', 'engine', 'settings', 'inspector', 'capabilities'];
   ok('a reference place still answers Esc',
     reference.every(id => route(key({name: 'escape'}), where({place: id})).do === 'close-place'));
+}
+
+console.log('\nConversations asks WHERE the work was done before WHAT was said');
+{
+  at(100, 30);
+  const outside = frame({...emptyState(), ...filled, place: 'conversations', now: 0} as State)
+    .rows.map(plain).join('\n');
+  // `/home/spark/x` reads as `~/x`: the workspace is NAMED the way a person
+  // names it, by the same function the rail uses.
+  ok('the first level lists the places, both of them',
+    outside.includes('~/x') && outside.includes('/srv/app'),
+    outside.split('\n').filter(r => r.includes('/')));
+  ok('and says how many conversations happened in each', /1 conversation\b/.test(outside), outside);
+  ok('it does NOT mix in what was said — that is the next level',
+    !outside.includes('a real goal') && !outside.includes('somewhere else'));
+
+  const inside = frame({...emptyState(), ...filled, place: 'conversations',
+    inLocation: '/home/spark/x', now: 0} as State).rows.map(plain).join('\n');
+  ok('inside a place, its own conversations are there', inside.includes('a real goal'));
+  ok('and only its own', !inside.includes('somewhere else'), inside);
+  ok('with the row that starts a new one', /\+ start a new conversation here/.test(inside), inside);
+  ok('and the place a person is in, named', inside.includes('~/x'), inside);
+
+  // The cursor starts on the row that starts a new conversation, which is why
+  // it is drawn first: the action does not move when the list grows.
+  ok('the mark is on the new-conversation row when the level opens',
+    /[◆▰]\s+\+ start/.test(inside), inside.split('\n').find(r => r.includes('+ start')));
+
+  // Esc leaves the inner level before the place — the same rule, one more layer.
+  ok('Esc goes back to the places, not out of Conversations',
+    route(key({name: 'escape'}), where({place: 'conversations', inside: true})).do === 'close-inside');
+  ok('and out of the place once it is at the first level',
+    route(key({name: 'escape'}), where({place: 'conversations'})).do === 'close-place');
+
+  const over: string[] = [];
+  for (const w of [100, 60, 40, 24]) {
+    at(w, 30);
+    const rows = frame({...emptyState(), ...filled, place: 'conversations',
+      inLocation: '/home/spark/x', now: 0} as State).rows.map(plain);
+    if (rows.some(r => columnsOf(r) > w)) over.push(`inside@${w}`);
+  }
+  ok('neither level overflows its window', over.length === 0, over);
+
+  // Goals sent before a host supplied a workspace have no place on record.
+  at(100, 30);
+  const placeless = frame({...emptyState(), ...filled, place: 'conversations', now: 0,
+    conversations: [{id: 's9', workspace: null, goals: 1, last: 'old', at: '2026-08-20 05:00'}]
+  } as State).rows.map(plain).join('\n');
+  ok('conversations with no place on record are said as nothing, not drawn as an empty list',
+    placeless.includes('nothing on record yet') && !placeless.includes('old'), placeless);
+  at(100, 30);
+}
+
+console.log('\na console that has not been spoken to is in no conversation');
+{
+  at(100, 30);
+  const {en} = await import('../i18n/en.js');
+  const rows = frame({...emptyState(), ...filled, sessionId: null, place: 'workspace', now: 0} as State)
+    .rows.map(plain).join('\n');
+  ok('Workspace says so rather than showing an id for one that does not exist',
+    rows.includes(en.places.newConversation), rows);
 }
 
 console.log('\nthe help page is a page: a hierarchy, and it sheds nothing');

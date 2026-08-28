@@ -64,3 +64,26 @@ records the same fact and behaves accordingly: Esc says *stopping*, and only
 **Console impact:** a person pressing Esc on a single-wave plan waits, with the
 console honestly saying it is stopping rather than claiming it stopped. This is
 the limit most likely to be felt as "the console is broken" when it is not.
+
+---
+
+## 4 · `listGoals()` returns neither the session nor the workspace
+
+**What is true.** `listGoals()` selects `id`, `goal`, `status` and `createdAt`
+(`infra/persistence.service.ts:333-345`). Both facts a conversation is made of
+— `sessionId` and `workspacePath` — are on the same row and are returned only
+by `getGoalRecord()` (`:1876-1913`), one goal at a time.
+
+**What follows, measured.** Conversations groups by both, so opening it reads
+the last 60 goals and then issues 60 `getGoalRecord()` calls — in parallel, but
+still 61 round trips to assemble a list the first query already had the columns
+for. An earlier version awaited them in series and the place sat on "reading
+the record…" until it gave up; that is fixed in the console, and the read
+amplification is not.
+
+**What the console does about it.** Uses the declared surface it has, bounded
+by the same limit and only when the place is opened. Nothing is cached: a list
+of conversations that could be stale is worse than one that costs a read.
+
+**Not evaluated here:** whether `listGoals()` should carry them, or whether a
+`listConversations()` belongs on the store at all. Both are engine questions.

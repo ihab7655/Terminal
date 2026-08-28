@@ -16,6 +16,14 @@ import {DEFAULT_LANGUAGE} from '../i18n/index.js';
 // which rows were open, anything waiting for an answer. The console restores a
 // CONFIGURATION; a conversation is restored from the engine's own record,
 // which is the only place it actually lives.
+//
+// THE SESSION ID WAS HERE, AND ITS REMOVAL IS THE POINT. `session: {id}` was
+// written on every save and read at every boot, so starting the console put a
+// person back into the conversation they had quit — invisibly, behind an empty
+// screen, and across projects too, because this file is per user and not per
+// workspace. Restarting is not resuming (`session.ts`), so there is nothing
+// about a conversation to remember: the field is gone rather than kept and
+// ignored, and an old file's copy of it is dropped at the next save.
 
 export type Mode = 'automatic' | 'approval' | 'plan';
 export type Permission = 'allowed' | 'needs-approval' | 'forbidden';
@@ -45,7 +53,6 @@ export type Settings = {
   mode: Mode;
   policy: EffectTable;
   standing: Standing[];
-  session: {id: string | null};
   firstRunComplete: boolean;
 };
 
@@ -75,7 +82,6 @@ export const defaults = (): Settings => ({
     undeclared: 'needs-approval'
   },
   standing: [],
-  session: {id: null},
   firstRunComplete: false
 });
 
@@ -155,10 +161,6 @@ export function load(path = settingsPath()): {settings: Settings; unreadable: st
         typeof (s as Standing).granted === 'string'
     );
   }
-
-  const session = f['session'];
-  if (session && typeof session === 'object' && typeof (session as {id?: unknown}).id === 'string')
-    settings.session.id = (session as {id: string}).id;
 
   if (typeof f['firstRunComplete'] === 'boolean') settings.firstRunComplete = f['firstRunComplete'];
 

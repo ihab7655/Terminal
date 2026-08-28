@@ -1,4 +1,4 @@
-import {mkdtempSync, writeFileSync} from 'node:fs';
+import {mkdtempSync, readFileSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {CURRENT_VERSION, defaults, load, save, settingsPath} from './store.js';
@@ -23,10 +23,24 @@ console.log('\nround trip');
 const mine = {...defaults(), language: 'ar', mode: 'approval' as const, firstRunComplete: true};
 mine.policy['vcs:write'] = 'forbidden';
 mine.standing = [{kind: 'command', value: 'npm test', workspace: '~/x', granted: '2026-08-28'}];
-mine.session.id = 'abc';
 ok('saving reports no trouble', save(mine, at('round.json')) === null);
 const back = load(at('round.json')).settings;
 ok('everything comes back', JSON.stringify(back) === JSON.stringify(mine), back);
+
+console.log('\nwhat is deliberately NOT remembered');
+// The defect: `session: {id}` was written here and read back at boot, so
+// restarting the console silently put a person back in the conversation they
+// had quit — and across projects, because this file is per user. Restarting is
+// not resuming, so the conversation is not here at all.
+const saved = JSON.parse(readFileSync(at('round.json'), 'utf8')) as Record<string, unknown>;
+ok('no conversation is written to the settings file', saved['session'] === undefined, saved);
+const withOld = load(write('old.json', JSON.stringify({
+  version: CURRENT_VERSION, language: 'ar', session: {id: '3f1a2b4c-5d6e-4f70-8a91-b2c3d4e5f607'}
+})));
+ok('a file written by the old console still reads, field by field',
+  withOld.settings.language === 'ar' && withOld.unreadable.length === 0, withOld);
+ok('and its conversation is not read back into anything',
+  (withOld.settings as Record<string, unknown>)['session'] === undefined, withOld.settings);
 
 console.log('\nnot having settings is an ordinary state');
 const fresh = load(at('nothing-here.json'));

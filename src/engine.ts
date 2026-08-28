@@ -37,10 +37,10 @@ const DEFAULT_RUNTIME =
 const DEFAULT_ENGINE =
   process.env['ENGINE_PATH'] ?? '/home/spark/agent-engine/packages/engine-core/dist/index.js';
 
-import type {Standing} from './session.js';
+import type {Conversation, Talking} from './session.js';
 
 /** What one goal submission carries. The console names the goal itself. */
-export type Submission = Standing & {
+export type Submission = Talking & {
   readonly goal: string;
   /**
    * The console's own id for this run, honoured by the engine as given
@@ -89,10 +89,16 @@ export type Engine = {
    * rather than inventing a thread of its own, and continuing one means
    * submitting the next goal with the same id, which is all the engine ever
    * needed to read a message in its conversation.
+   *
+   * Grouped by the session AND the workspace it ran in, because both are
+   * facts the engine records per goal (`session_id`, `workspace_path`) and a
+   * conversation is read under the work it belongs to. A session that spans
+   * two directories — which the console could produce before a launch stopped
+   * resuming silently, and session f780a142 is one — is therefore listed in
+   * both, holding the goals it actually ran there rather than one entry
+   * claiming a place half of it was never in.
    */
-  conversations(limit?: number): Promise<ReadonlyArray<{
-    id: string; goals: number; last: string; at: string;
-  }>>;
+  conversations(limit?: number): Promise<readonly Conversation[]>;
   /**
    * The whole record of ONE execution — `replay()`, a public engine export.
    *
@@ -385,11 +391,12 @@ export async function openEngine(
         // record inside the loop: sixty round trips in series, and the place
         // sat on "reading the record…" until it gave up. The reads do not
         // depend on each other, so they are all in flight at once.
-        const record = (storage['getGoalRecord'] as (id: string) => Promise<{sessionId?: string | null} | null>);
+        const record = (storage['getGoalRecord'] as (id: string) =>
+          Promise<{sessionId?: string | null; workspacePath?: string | null} | null>);
         const metas = await Promise.all(
           (rows ?? []).map(r => record.call(storage, r.id).catch(() => null))
         );
-        const byId = new Map<string, {id: string; goals: number; last: string; at: string}>();
+        const byThread = new Map<string, {id: string; workspace: string | null; goals: number; last: string; at: string}>();
         (rows ?? []).forEach((r, i) => {
           const id = metas[i]?.sessionId;
           // A goal with no session belongs to no conversation. Skipped rather
@@ -398,16 +405,21 @@ export async function openEngine(
           // pretended otherwise would claim something about the engine's memory
           // that is not true.
           if (typeof id !== 'string' || id === '') return;
-          const seen = byId.get(id);
+          const workspace = metas[i]?.workspacePath ?? null;
+          const key = `${id}\u0000${workspace ?? ''}`;
+          const seen = byThread.get(key);
+          // `rows` arrive newest first, so the first one seen for a thread is
+          // its most recent — which is what `last` and `at` mean here.
           if (seen) { seen.goals += 1; return; }
-          byId.set(id, {
+          byThread.set(key, {
             id,
+            workspace,
             goals: 1,
             last: r.goal.split('\n')[0] ?? r.goal,
             at: new Date(r.createdAt).toISOString().replace('T', ' ').split('.')[0] ?? ''
           });
         });
-        return [...byId.values()];
+        return [...byThread.values()];
       },
       goals: async limit => {
         const storage = (app['context'] as {storage: Record<string, unknown>}).storage;
