@@ -115,7 +115,9 @@ export const ar: Catalogue = {
     repaired: 'أصلح {tool}',
     noEngineHere: 'لا محرّك — لا شيء يُشغَّل عليه',
     endedBadly: 'انتهى الهدف بسوء',
-    replanned: 'تغيّرت الخطّة للمحاولة التالية'
+    replanned: 'تغيّرت الخطّة للمحاولة التالية',
+    couldNotBuild: 'لم يستطع بناءها',
+    missingCapability: 'تنقصه قدرة'
   },
 
   places: {
@@ -130,6 +132,10 @@ export const ar: Catalogue = {
     inspector: 'المفتّش', inspectorHint: 'تنفيذ واحد، مقروءاً كاملاً',
     capabilities: 'القدرات', capabilitiesHint: 'ما يستطيع المحرّك أن يمدّ يده إليه',
     profiles: 'الملفّات', profilesHint: 'كيف يبدو، وكيف يعمل، وما المسموح له',
+    settings: 'الإعدادات', settingsHint: 'بماذا زُوِّد المحرّك · للقراءة فقط',
+    conversations: 'المحادثات', conversationsHint: 'كل جلسة، والتي أنت فيها',
+    thisSession: 'هذه',
+    resume: '↑↓ تحرّك · Enter تابع تلك المحادثة · Esc رجوع',
     pickAGoal: 'افتح السجلّ واضغط Enter على هدف',
     openARow: '↑↓ تحرّك · Enter افحص · Esc رجوع',
     loading: 'يقرأ السجلّ…',

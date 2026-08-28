@@ -131,6 +131,8 @@ export type Catalogue = {
     readonly noEngineHere: string;
     readonly endedBadly: string;
     readonly replanned: string;
+    readonly couldNotBuild: string;
+    readonly missingCapability: string;
   };
 
   readonly places: {
@@ -145,6 +147,10 @@ export type Catalogue = {
     readonly inspector: string; readonly inspectorHint: string;
     readonly capabilities: string; readonly capabilitiesHint: string;
     readonly profiles: string; readonly profilesHint: string;
+    readonly settings: string; readonly settingsHint: string;
+    readonly conversations: string; readonly conversationsHint: string;
+    readonly thisSession: string;
+    readonly resume: string;
     readonly pickAGoal: string;
     readonly openARow: string;
     readonly loading: string;

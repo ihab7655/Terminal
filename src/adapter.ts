@@ -233,7 +233,7 @@ export function toItem(event: EngineEvent, say: Catalogue = en): Item | undefine
       const text = str(p['text']);
       const cause = str(p['cause']);
       if (to === 'UNRESOLVED') {
-        return {kind: 'noted', id: id('noted'), lines: [`missing a capability: ${text ?? ''}`.trim()]};
+        return {kind: 'noted', id: id('noted'), lines: [`${say.outcome.missingCapability}: ${text ?? ''}`.trim()]};
       }
       if (to === 'ACQUIRING') {
         return {kind: 'phase', since: now(), id: id('phase'), text: say.outcome.buildingCapability};
@@ -242,7 +242,7 @@ export function toItem(event: EngineEvent, say: Catalogue = en): Item | undefine
         return {
           kind: 'noted',
           id: id('noted'),
-          lines: [cause ? `could not build it — ${cause}` : 'could not build it']
+          lines: [cause ? `${say.outcome.couldNotBuild} — ${cause}` : say.outcome.couldNotBuild]
         };
       }
       return undefined;

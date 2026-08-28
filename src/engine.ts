@@ -63,6 +63,15 @@ export type Engine = {
    */
   submit(req: Submission): Promise<{success: boolean; status: string}>;
   /**
+   * What the engine was GIVEN — read for display, never written.
+   *
+   * The engine resolves its configuration from `.env` at import and holds it
+   * for the life of the process, so changing a provider or a key is a restart
+   * and not a settings change. This console therefore READS it and says where
+   * it lives; it does not write that file.
+   */
+  configuration(): ReadonlyArray<readonly [string, string]>;
+  /**
    * What the engine can reach for right now.
    *
    * Read from the registry it actually holds — `context.toolRegistry` — not
@@ -72,6 +81,18 @@ export type Engine = {
   capabilities(): ReadonlyArray<{name: string; category: string}>;
   /** Every goal on record, newest first — `listGoals()` on the engine's store. */
   goals(limit?: number): Promise<readonly GoalRow[]>;
+  /**
+   * The conversations on record, newest first.
+   *
+   * A conversation IS the engine's session: the id it keys its own memory on —
+   * summary, compacted context, recent turns. So this groups goals by that id
+   * rather than inventing a thread of its own, and continuing one means
+   * submitting the next goal with the same id, which is all the engine ever
+   * needed to read a message in its conversation.
+   */
+  conversations(limit?: number): Promise<ReadonlyArray<{
+    id: string; goals: number; last: string; at: string;
+  }>>;
   /**
    * The whole record of ONE execution — `replay()`, a public engine export.
    *
@@ -284,6 +305,22 @@ export async function openEngine(
       steer: async (goalId, text) => {
         await (app['steerGoal'] as (g: string, t: string) => Promise<unknown>)(goalId, text);
       },
+      configuration: () => {
+        const c = config as Record<string, unknown>;
+        const llm = (c['llm'] ?? {}) as Record<string, unknown>;
+        const key = typeof llm['apiKey'] === 'string' ? llm['apiKey'] : '';
+        return [
+          ['provider', String(llm['provider'] ?? '—')],
+          ['model', String(llm['model'] ?? 'the provider default')],
+          // Never the key itself. Its LAST characters, which is enough to tell
+          // one key from another and not enough to be one.
+          ['api key', key === '' ? 'not set' : `set · …${key.slice(-4)}`],
+          ['database', String((c['persistence'] as Record<string, unknown> | undefined)?.['type'] ?? '—')],
+          ['redis', String(c['redisUrl'] ?? '—')],
+          ['engine', enginePath.replace(/\/packages\/.*$/, '')],
+          ['config', `${engineRoot}/.env — read here, never written`]
+        ] as ReadonlyArray<readonly [string, string]>;
+      },
       capabilities: () => {
         // BOUND, not detached. These are methods on a class and they use
         // `this`; pulling one out of the object and calling it loses the
@@ -327,6 +364,50 @@ export async function openEngine(
           // a verdict on its behalf.
           return [];
         }
+      },
+      conversations: async limit => {
+        const storage = (app['context'] as {storage: Record<string, unknown>}).storage;
+        const rows = await (storage['listGoals'] as (n?: number) => Promise<GoalRow[]>)
+          .call(storage, limit ?? 60);
+
+        // LIMIT OF CURRENT ENGINE SURFACE, worked around with declared surface
+        // rather than papered over: `listGoals()` selects id, goal, status and
+        // createdAt — and NOT sessionId (infra/persistence.service.ts:342). So
+        // the goal-to-conversation link is read one goal at a time through
+        // `getGoalRecord()`, which does carry it.
+        //
+        // Bounded by the same limit, and only when this place is opened. A
+        // cheaper read would need a column `listGoals` does not return, and
+        // inventing the grouping from anything else — the goal's text, its
+        // timing — would be a thread this console made up rather than the one
+        // the engine actually keys its memory on.
+        // IN PARALLEL, not one after another. The first version awaited each
+        // record inside the loop: sixty round trips in series, and the place
+        // sat on "reading the record…" until it gave up. The reads do not
+        // depend on each other, so they are all in flight at once.
+        const record = (storage['getGoalRecord'] as (id: string) => Promise<{sessionId?: string | null} | null>);
+        const metas = await Promise.all(
+          (rows ?? []).map(r => record.call(storage, r.id).catch(() => null))
+        );
+        const byId = new Map<string, {id: string; goals: number; last: string; at: string}>();
+        (rows ?? []).forEach((r, i) => {
+          const id = metas[i]?.sessionId;
+          // A goal with no session belongs to no conversation. Skipped rather
+          // than gathered into an invented one: goals sent before this console
+          // carried an id genuinely cannot see each other, and a thread that
+          // pretended otherwise would claim something about the engine's memory
+          // that is not true.
+          if (typeof id !== 'string' || id === '') return;
+          const seen = byId.get(id);
+          if (seen) { seen.goals += 1; return; }
+          byId.set(id, {
+            id,
+            goals: 1,
+            last: r.goal.split('\n')[0] ?? r.goal,
+            at: new Date(r.createdAt).toISOString().replace('T', ' ').split('.')[0] ?? ''
+          });
+        });
+        return [...byId.values()];
       },
       goals: async limit => {
         const storage = (app['context'] as {storage: Record<string, unknown>}).storage;

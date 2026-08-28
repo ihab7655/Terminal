@@ -86,5 +86,28 @@ for (const [label, over] of states) {
 }
 ok(`checked ${checked} frames from 20 to 140 columns`, checked > 2000);
 
+console.log('\nthe opening survives a narrow window with a whole wordmark');
+{
+  const {openingRows} = await import('./opening.js');
+  const rows = (t: number, w: number, h = 24) => openingRows(t, w, h).map(plain);
+  let over = 0, widest = 0;
+  for (const w of [20, 24, 30, 36, 44, 60, 92, 140])
+    for (let t = 0; t <= 122; t += 2)
+      for (const r of rows(t, w)) { const c = cols(r); widest = Math.max(widest, c); if (c > w) over++; }
+  ok('no row of the opening ever exceeds its window', over === 0, {over, widest});
+
+  // The block wordmark needs 41 columns and one either side; below that it
+  // degrades to plain text. Neither is ever CUT — the whole name is on screen
+  // from the moment the wipe finishes until the opening ends.
+  const settled = (w: number) => rows(90, w).join('\n');
+  ok('at 30 columns the name is whole, and in plain text',
+    settled(30).includes('OVERYOS') && !settled(30).includes('█'));
+  ok('at 92 it is the block wordmark', settled(92).includes('█'));
+  ok('and the whole name stands for a long time before the opening ends',
+    [86, 100, 114].every(t => rows(t, 30).join('\n').includes('OVERYOS')));
+  ok('no DRAGON survives anywhere in it',
+    ![30, 92].some(w => settled(w).includes('DRAGON')));
+}
+
 console.log(failed === 0 ? '\nresponsive: all passed\n' : `\nresponsive: ${failed} FAILED\n`);
 if (failed > 0) process.exit(1);

@@ -90,7 +90,9 @@ export const en: Catalogue = {
     repaired: 'repaired {tool}',
     noEngineHere: 'no engine — nothing to run this against',
     endedBadly: 'the goal ended badly',
-    replanned: 'the plan changed for the next attempt'
+    replanned: 'the plan changed for the next attempt',
+    couldNotBuild: 'could not build it',
+    missingCapability: 'missing a capability'
   },
 
   places: {
@@ -105,6 +107,10 @@ export const en: Catalogue = {
     inspector: 'Inspector', inspectorHint: 'one execution, read whole',
     capabilities: 'Capabilities', capabilitiesHint: 'what the engine can reach for',
     profiles: 'Profiles', profilesHint: 'how it looks, how it runs, what it may do',
+    settings: 'Settings', settingsHint: 'what the engine was given · read only',
+    conversations: 'Conversations', conversationsHint: 'every session, and the one you are in',
+    thisSession: 'this one',
+    resume: '↑↓ move · Enter continue that conversation · Esc back',
     pickAGoal: 'open History and press Enter on a goal',
     openARow: '↑↓ move · Enter inspect · Esc back',
     loading: 'reading the record…',

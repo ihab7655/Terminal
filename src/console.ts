@@ -234,6 +234,12 @@ export type State = {
   } | null;
   /** What the engine can reach for, once Capabilities has been opened. */
   capabilities: ReadonlyArray<{name: string; category: string}> | null;
+  /** What the engine was given, once Settings has been opened. Read only. */
+  configuration: ReadonlyArray<readonly [string, string]> | null;
+  /** Sessions, newest first, with how many goals each holds. */
+  conversations: ReadonlyArray<{id: string; goals: number; last: string; at: string}> | null;
+  /** Which conversation the cursor is on — Enter continues it. */
+  conversationAt: number;
   /** The way of working in use, and whether a hand edit has moved it since. */
   profile: string;
   adjusted: boolean;
@@ -270,6 +276,9 @@ export const emptyState = (): State => ({
   recordAt: 0,
   inspecting: null,
   capabilities: null,
+  configuration: null,
+  conversations: null,
+  conversationAt: 0,
   profile: 'phosphor',
   adjusted: false,
   confirming: null
@@ -1008,6 +1017,28 @@ function placeRows(state: State, width: number): string[] {
           on ? colour.ink : colour.muted));
       }
       rows.push(line(say.profile.appliesAll, colour.dim));
+      break;
+    }
+
+    case 'settings':
+      if (state.configuration === null) { rows.push(line(say.places.loading, colour.dim)); break; }
+      for (const [k, v] of state.configuration) rows.push(line(`${k}   ${v}`, colour.muted));
+      break;
+
+    case 'conversations': {
+      if (state.conversations === null) { rows.push(line(say.places.loading, colour.dim)); break; }
+      if (state.conversations.length === 0) { rows.push(line(say.places.nothingYet, colour.dim)); break; }
+      state.conversations.forEach((c, i) => {
+        const on = i === state.conversationAt;
+        const mine = c.id === state.sessionId ? ` · ${say.places.thisSession}` : '';
+        rows.push(
+          ' '.repeat(INDENT) +
+            tint(on ? glyph.chosen + ' ' : '  ', colour.cyan) +
+            tint(fit(`${c.at}  ${c.goals}  ${c.last}${mine}`, Math.max(8, room - 2)),
+              on ? colour.ink : colour.muted)
+        );
+      });
+      rows.push(line(say.places.resume, colour.dim));
       break;
     }
 

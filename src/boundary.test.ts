@@ -70,6 +70,42 @@ ok('the terminal layer imports nothing from above it',
     return !t || !/from '\.\/(console|adapter|action|engine|session|opening|demo|history)\.js'/.test(t[1]);
   }));
 
+console.log('\nno sentence a person reads is written outside a catalogue');
+
+// The LLD's own Done-when for the language step: "no user-visible literal
+// remains in a non-catalogue module (a test greps for it)". This is that grep.
+//
+// What it looks for is a SENTENCE — two or more words, at least one of them
+// four letters or longer — in a quoted string, outside i18n/. Identifiers,
+// glyphs, keys, effect ids, colours and short labels are not sentences and are
+// not the concern: a tool name is the same in every language, and a catalogue
+// entry for `fs:write` would be a translation of an identifier.
+// A SENTENCE is judged on the string's own contents, not on the line around
+// it: two or more words, one of them four letters or longer, made of letters
+// and ordinary punctuation only. That excludes identifiers, effect ids, glyphs,
+// colours, keys and short labels — a tool name is the same in every language,
+// and a catalogue entry for `fs:write` would be translating an identifier.
+const literals = (text: string): string[] =>
+  [...text.matchAll(/'([^'\\]{4,120})'|`([^`$\\]{4,120})`/g)]
+    .map(m => m[1] ?? m[2] ?? '');
+const isSentence = (v: string): boolean => {
+  if (!/^[A-Za-z][A-Za-z ,.'’—–:;!?()-]*$/.test(v)) return false;
+  const words = v.trim().split(/\s+/);
+  return words.length >= 2 && words.some(w => w.replace(/[^A-Za-z]/g, '').length >= 4);
+};
+const speaks = sources.filter(([f]) => !f.startsWith('i18n'));
+const ALLOWED = new Set(['demo.ts']);   // a recorded fixture, never a live screen
+const offenders: string[] = [];
+for (const [f, text] of speaks) {
+  if (ALLOWED.has(f)) continue;
+  for (const line of code(text).split('\n')) {
+    // Only strings that reach a row: what is drawn, noted, or offered.
+    if (!/\b(lines:|text:|placeholder|hint:|title:)/.test(line)) continue;
+    for (const v of literals(line)) if (isSentence(v)) offenders.push(`${f}: ${v}`);
+  }
+}
+ok('every sentence a person reads comes from a catalogue', offenders.length === 0, offenders);
+
 console.log('\nand nothing that decides ever reads how it looks');
 
 // The separation between appearance and permission, made mechanical. A profile

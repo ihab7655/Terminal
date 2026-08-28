@@ -49,7 +49,7 @@ let opening: Opening = startOpening();
 // preventing.
 const remembered = load();
 let settings: Settings = remembered.settings;
-const here = standing(settings.session.id ?? undefined);
+let here = standing(settings.session.id ?? undefined);
 settings = {...settings, session: {id: here.sessionId}};
 
 /** Everything waiting for an answer, oldest first. */
@@ -291,6 +291,36 @@ function key(k: Key) {
         }
       }
     }
+    // ── CONTINUING A CONVERSATION ────────────────────────────────────────
+    //
+    // A conversation IS the engine's session. Continuing one means sending the
+    // next goal with that id — which is the whole of it: the engine then reads
+    // the message with its own summary, compacted context and recent turns,
+    // because that is what it keys them on.
+    //
+    // The transcript is NOT repopulated. What was said in that conversation is
+    // in the engine's record, not in this screen, and drawing rows the console
+    // did not witness would be a transcript claiming to have seen something.
+    if (state.place === 'conversations' && state.conversations !== null) {
+      if (k.name === 'up') { edit(s => ({...s, conversationAt: Math.max(0, s.conversationAt - 1)})); return; }
+      if (k.name === 'down') {
+        edit(s => ({...s, conversationAt: Math.min((s.conversations?.length ?? 1) - 1, s.conversationAt + 1)}));
+        return;
+      }
+      if (k.name === 'enter') {
+        const c = state.conversations[state.conversationAt];
+        if (c) {
+          here = {...here, sessionId: c.id};
+          settings = {...settings, session: {id: c.id}};
+          const trouble = save(settings);
+          edit(s => ({...s, place: null, sessionId: c.id}));
+          add({kind: 'noted', id: `noted-${Date.now()}`,
+               lines: [`${catalogueFor(settings.language).places.conversations}: ${c.last}`]});
+          if (trouble) add({kind: 'noted', id: `noted-${Date.now()}-t`, lines: [trouble]});
+        }
+        return;
+      }
+    }
     if (state.place === 'history' && state.record !== null) {
       if (k.name === 'up') { edit(s => ({...s, recordAt: Math.max(0, s.recordAt - 1)})); return; }
       if (k.name === 'down') {
@@ -321,6 +351,20 @@ function key(k: Key) {
         // History is READ when it is opened, never held live: the event stream
         // is live-only and does not survive the process, so what happened
         // before comes from the engine's store or from nowhere.
+        if (place.id === 'settings' && engine) {
+          try { edit(s => ({...s, configuration: engine!.configuration()})); }
+          catch (err) {
+            edit(s => ({...s, configuration: []}));
+            add({kind: 'noted', id: `noted-${Date.now()}`,
+                 lines: [`could not read the configuration: ${err instanceof Error ? err.message : String(err)}`]});
+          }
+        }
+        if (place.id === 'conversations' && engine) {
+          edit(s => ({...s, conversations: null, conversationAt: 0}));
+          void engine.conversations(60)
+            .then(rows => edit(s => ({...s, conversations: rows})))
+            .catch(() => edit(s => ({...s, conversations: []})));
+        }
         if (place.id === 'capabilities' && engine) {
           // A failure here is REPORTED, never swallowed into an empty list.
           // It was swallowed once, and Capabilities read "nothing on record
@@ -638,7 +682,7 @@ function stopRunningGoal(): void {
   add({
     kind: 'noted',
     id: `noted-${Date.now()}`,
-    lines: ['stopping — the engine finishes the work already in flight first']
+    lines: [catalogueFor(settings.language).engine.stopping]
   });
 }
 
