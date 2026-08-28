@@ -51,6 +51,24 @@ const states: Array<[string, Partial<State>]> = [
     {kind: 'did', id: 'd', verb: 'write_file', object: 'src/links.py', state: 'ok',
      output: ['a captured line that is considerably longer than a narrow window can hold']}
   ]}],
+  // The five console states the design names, so none is proven only by its
+  // neighbours: no engine, ready, working, waiting on you, idle.
+  ['no engine', {items: [{kind: 'noted', id: 'engine-failed', lines: ['the engine did not open — ENOENT']}]}],
+  ['ready', {items: []}],
+  ['waiting on you', {waiting: 1, stoppable: true, items: [
+    {kind: 'asked', id: 'a', toolName: 'terminal', effects: ['process:spawn'],
+     target: 'pip install requests beautifulsoup4', requester: 'implementer', workspace: '~/x'}
+  ]}],
+  ['a plan reported', {items: [
+    {kind: 'planned', id: 'p', tasks: [{title: 'write links.py', targets: ['links.py']}],
+     contract: ['IMPLEMENTATION_COMPLETE', 'FILES_CHANGED']}
+  ]}],
+  ['a steer under a goal', {items: [
+    {kind: 'said', id: 's', text: 'build a link extractor'},
+    {kind: 'steer', id: 'st', text: 'put it in src/, not the root', state: 'admitted'}
+  ]}],
+  ['a place open', {place: 'policy', policy: [['fs:read', 'allowed'], ['vcs:write', 'forbidden']]}],
+  ['the launcher up', {launcher: {open: true, at: 0}}],
   ['an opened row', {open: new Set(['d']), items: [
     {kind: 'did', id: 'd', verb: 'bash', object: 'npm test', state: 'failed',
      output: ['Traceback (most recent call last):', '  File "x.py", line 1, in <module>']}

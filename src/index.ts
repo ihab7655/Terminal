@@ -15,6 +15,7 @@ import {
 import {isFailure, openEngine, type Engine} from './engine.js';
 import {chosen, launcherUp, offered} from './console.js';
 import {queryOf} from './places/registry.js';
+import {route, type Where} from './places/route.js';
 import {workspaceName, standing} from './session.js';
 import {load, save, type Settings, type Standing} from './settings/store.js';
 import {catalogues, catalogueFor} from './i18n/index.js';
@@ -236,9 +237,27 @@ async function leave(): Promise<never> {
   process.exit(0);
 }
 
+/** Where the console is, as the router asks about it. */
+const whereWeAre = (): Where => ({
+  openingDone: opening.done,
+  place: state.place,
+  launcher: launcherUp(state),
+  running: running.length > 0,
+  waiting: waiting.length > 0,
+  composerEmpty: state.input === ''
+});
+
 function key(k: Key) {
-  if (k.ctrl && k.text === 'c') {
+  // What a key MEANS is decided by a pure function, so the whole table can be
+  // asserted as a matrix rather than discovered by pressing keys at a running
+  // console. This function only performs the answer.
+  const act = route({name: k.name, text: k.text, ctrl: k.ctrl}, whereWeAre());
+  if (act.do === 'quit') {
     void leave();
+    return;
+  }
+  if (act.do === 'open-place') {
+    edit(s => ({...s, place: act.place}));
     return;
   }
 
@@ -400,7 +419,24 @@ function key(k: Key) {
   } else if (k.ctrl && k.text === 'k') {
     edit(s => ({...s, launcher: {open: true, at: 0}}));
     return;
+  } else if (k.ctrl && k.text === 'p') {
+    // Straight to what it may do — the table a person reaches for while
+    // something is running and they want to know why it stopped, or did not.
+    edit(s => ({...s, place: 'policy'}));
+    return;
+  } else if (!k.ctrl && k.text === '?' && state.input === '') {
+    // `?` only on an empty line, so a question mark inside a sentence is a
+    // question mark. The composer offers it exactly while it is free to mean
+    // this, and stops offering it the moment a person types.
+    edit(s => ({...s, place: 'keys'}));
+    return;
   }
+
+  // NO `^M` FOR THE MODE, and it is not an omission. A terminal delivers Ctrl+M
+  // as carriage return — decode('\r') is `enter`, byte for byte the same thing
+  // — so a console that bound it would be binding Enter, and every goal a
+  // person sent would open a menu instead. The mode is reached by `/mode` or
+  // from the launcher, both of which already work.
 
   // Any key during the opening ends it, and does nothing else — the keystroke
   // that skips is not also the first character of a goal.

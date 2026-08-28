@@ -218,5 +218,59 @@ ok('a stopped run reads as its reason, which is what the summary carries',
     {kind: string; lines: string[]} | undefined;
   ok('retry.plan_changed says the plan changed', changed?.lines[0]?.includes('a new approach') === true);
 }
+// ── ONE FIXTURE PER EVENT THE ENGINE CAN PUBLISH ────────────────────────────
+//
+// The design asks for a fixture per event type, all 26 of them, "asserting the
+// item produced, or that none is" — so a dropped event stays a decision rather
+// than becoming an oversight nobody notices.
+//
+// The list is the engine's own KnownExecutionEvent union, read from
+// observability/events/index.ts on 2026-08-28.
+{
+  const ALL: Array<[string, Record<string, unknown>]> = [
+    ['goal.started', {}],
+    ['goal.completed', {}],
+    ['goal.failed', {summary: 'it did not work'}],
+    ['worker.spawned', {role: 'implementer'}],
+    ['worker.done', {role: 'implementer'}],
+    ['tool.called', {toolName: 'bash', args: {command: 'ls'}, success: true, durationMs: 4}],
+    ['tool.args_normalized', {}],
+    ['checkpoint.saved', {}],
+    ['capability.evolution', {phase: 'needed', capability: 'bash'}],
+    ['need.transition', {to: 'ACQUIRING', need: 'csv_export'}],
+    ['capability.attempt', {resolver: 'installed', outcome: 'declined'}],
+    ['classification.completed', {}],
+    ['planning.started', {}],
+    ['planning.finished', {wavesCount: 1}],
+    ['execution.wave.started', {waveIndex: 0}],
+    ['execution.wave.finished', {waveIndex: 0}],
+    ['verification.completed', {passed: false, reason: 'Unmet requirements'}],
+    ['retry.triggered', {attempt: 1, reason: 'unmet'}],
+    ['retry.plan_changed', {reason: 'a new approach'}],
+    ['completion.finished', {status: 'completed', summary: 'done'}],
+    ['directive.received', {directiveId: 'd', text: 'put it in src/'}],
+    ['directive.scoped', {directiveId: 'd', text: 'put it in src/', scope: 'plan'}],
+    ['directive.delivered', {directiveId: 'd', text: 'put it in src/'}],
+    ['directive.admitted', {directiveId: 'd', text: 'put it in src/'}],
+    ['directive.superseded', {directiveId: 'd', text: 'put it in src/'}],
+    ['directive.not_delivered', {directiveId: 'd', text: 'put it in src/'}]
+  ];
+  ok('the engine publishes 26 events and there is a fixture for each', ALL.length === 26);
+
+  // Named, so a change to either list is a change a reader sees. These two are
+  // silent by DECISION: tool.args_normalized would double a row the call
+  // itself already makes, and completion.finished alone carries an ending.
+  const SILENT = new Set(['tool.args_normalized', 'goal.completed']);
+  const wrong: string[] = [];
+  for (const [type, payload] of ALL) {
+    const item = toItem({eventType: type, goalId: 'g', payload});
+    const drew = item !== undefined;
+    if (SILENT.has(type) ? drew : !drew) wrong.push(`${type} ${drew ? 'drew' : 'was silent'}`);
+  }
+  ok('each draws exactly what it is meant to, and the two silent ones stay silent',
+    wrong.length === 0, wrong);
+  ok('24 of 26 reach the screen', ALL.length - SILENT.size === 24);
+}
+
 console.log(failed === 0 ? '\nall good.\n' : `\n${failed} failed.\n`);
 process.exit(failed === 0 ? 0 : 1);

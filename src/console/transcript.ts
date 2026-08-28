@@ -12,7 +12,18 @@
 import {actionsOf, isRunning, sentenceOf, type Action} from '../action.js';
 import {catalogueFor} from '../i18n/index.js';
 import {colour, mark as glyph, paint as tint} from '../style.js';
-import {cell, fit, wrap} from '../text.js';
+import {cell, fit, fitStyled, wrap} from '../text.js';
+
+/**
+ * Assemble a row of coloured pieces and cut the WHOLE thing at the real width.
+ *
+ * The mistake this closes was fitting the PIECES: a row built from three fitted
+ * fragments is not a fitted row, and three item kinds overflowed a narrow
+ * window — found by rendering every state at every width from 20 to 140 rather
+ * than by looking at one. `fitStyled` measures visible columns and ignores the
+ * escape codes, so nothing here counts anything.
+ */
+const row = (width: number, ...pieces: string[]): string => fitStyled(pieces.join(''), width);
 import {reflow, windowOnto} from '../viewport.js';
 import {screenSize} from '../screen.js';
 import type {Change, Item} from './items.js';
@@ -181,29 +192,30 @@ function itemRows(item: Item, state: State, width: number, verbs: number): strin
     const left = INDENT + MARK;
     const room = Math.max(8, width - left - MARK);
     const verdict = say.steer[item.state as keyof typeof say.steer] ?? item.state;
-    return [
-      ' '.repeat(left) + tint(glyph.steer, colour.amber) + ' ' +
-        tint(fit(item.text, room), colour.ink) + ' ' +
-        tint(verdict, colour.dim)
-    ];
+    return [row(width,
+      ' '.repeat(left), tint(glyph.steer, colour.amber), ' ',
+      tint(item.text, colour.ink), ' ', tint(verdict, colour.dim)
+    )];
   }
 
   if (item.kind === 'planned') {
     const say = catalogueFor(state.language);
     const left = INDENT + MARK;
     const room = Math.max(8, width - left);
-    const rows = [
-      ' '.repeat(INDENT) + tint(glyph.asked, colour.amber) + ' ' +
-        tint(fit(say.planned.heading, room), colour.ink) +
-        tint(' · ' + say.planned.nothingRan, colour.dim)
-    ];
+    const rows = [row(width,
+      ' '.repeat(INDENT), tint(glyph.asked, colour.amber), ' ',
+      tint(say.planned.heading, colour.ink),
+      tint(' · ' + say.planned.nothingRan, colour.dim)
+    )];
     item.tasks.forEach((t, i) => {
       const targets = t.targets.length > 0 ? ` · ${t.targets.join(' ')}` : '';
-      rows.push(' '.repeat(left) + tint(fit(`${String(i + 1).padStart(2, '0')} ${t.title}${targets}`, room), colour.ink));
+      rows.push(row(width, ' '.repeat(left),
+        tint(`${String(i + 1).padStart(2, '0')} ${t.title}${targets}`, colour.ink)));
     });
     if (item.contract.length > 0)
-      rows.push(' '.repeat(left) + tint(fit(`${say.planned.judgedAgainst} ${item.contract.join(' · ')}`, room), colour.muted));
-    rows.push(' '.repeat(left) + tint(fit(say.planned.howToRun, room), colour.dim));
+      rows.push(row(width, ' '.repeat(left),
+        tint(`${say.planned.judgedAgainst} ${item.contract.join(' · ')}`, colour.muted)));
+    rows.push(row(width, ' '.repeat(left), tint(say.planned.howToRun, colour.dim)));
     return rows;
   }
 
@@ -223,21 +235,21 @@ function itemRows(item: Item, state: State, width: number, verbs: number): strin
     // it can be an entire system prompt. It is not shortened here; it is put
     // where a long line is ordinary, and `fit` cuts it at the real width like
     // every other row.
-    const rows = [
-      ' '.repeat(INDENT) + tint(glyph.asked, colour.amber) + ' ' +
-        tint(fit(item.effects.join(' · '), room), colour.ink)
-    ];
+    const rows = [row(width,
+      ' '.repeat(INDENT), tint(glyph.asked, colour.amber), ' ',
+      tint(item.effects.join(' · '), colour.ink)
+    )];
     if (item.target !== undefined)
-      rows.push(' '.repeat(left) + tint(fit(item.target, room), colour.ink));
-    rows.push(' '.repeat(left) + tint(fit(`${item.workspace} · ${say.asked.hint}`, room), colour.dim));
-    rows.push(' '.repeat(left) + tint(fit(`${say.asked.askedBy} ${item.requester}`, room), colour.dim));
-    rows.push(
-      ' '.repeat(left) +
-        tint('y', colour.cyan) + tint(' ' + say.asked.once + '   ', colour.muted) +
-        tint('c', colour.cyan) + tint(' ' + say.asked.thisCommand + '   ', colour.muted) +
-        tint('r', colour.cyan) + tint(' ' + say.asked.wholeRow + '   ', colour.muted) +
-        tint('n', colour.cyan) + tint(' ' + say.asked.refuse, colour.muted)
-    );
+      rows.push(row(width, ' '.repeat(left), tint(item.target, colour.ink)));
+    rows.push(row(width, ' '.repeat(left), tint(`${item.workspace} · ${say.asked.hint}`, colour.dim)));
+    rows.push(row(width, ' '.repeat(left), tint(`${say.asked.askedBy} ${item.requester}`, colour.dim)));
+    rows.push(row(width,
+      ' '.repeat(left),
+      tint('y', colour.cyan), tint(' ' + say.asked.once + '   ', colour.muted),
+      tint('c', colour.cyan), tint(' ' + say.asked.thisCommand + '   ', colour.muted),
+      tint('r', colour.cyan), tint(' ' + say.asked.wholeRow + '   ', colour.muted),
+      tint('n', colour.cyan), tint(' ' + say.asked.refuse, colour.muted)
+    ));
     return rows;
   }
 

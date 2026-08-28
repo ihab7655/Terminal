@@ -249,13 +249,26 @@ function status(state: State): string {
  * nothing here computes a fact of its own, and nothing claims a state it
  * cannot point at.
  */
+/**
+ * A row of a place or an overlay, cut at the real width.
+ *
+ * Every one of these is a line of coloured pieces, and the mistake this closes
+ * was fitting the PIECES: a row assembled from three fitted fragments is not a
+ * fitted row, and four of them overflowed a narrow window — found by rendering
+ * every state at every width from 20 to 140 rather than by looking.
+ *
+ * `fitStyled` measures visible columns and ignores the escape codes, so the row
+ * is cut where the screen ends and nothing here counts anything.
+ */
+const row = (width: number, ...pieces: string[]): string => fitStyled(pieces.join(''), width);
+
 function placeRows(state: State, width: number): string[] {
   const say = catalogueFor(state.language);
   const place = PLACES.find(p => p.id === state.place);
   if (!place) return [];
   const room = Math.max(8, width - INDENT - 2);
   const line = (text: string, c: string = colour.muted) =>
-    ' '.repeat(INDENT) + tint(fit(text, room), c);
+    row(width, ' '.repeat(INDENT), tint(text, c));
   const rows = [rail(width, 'section', place.name(say), place.hint(say))];
 
   switch (place.id) {
@@ -290,12 +303,11 @@ function placeRows(state: State, width: number): string[] {
       if (state.record.length === 0) { rows.push(line(say.places.nothingYet, colour.dim)); break; }
       state.record.forEach((g, i) => {
         const on = i === state.recordAt;
-        rows.push(
-          ' '.repeat(INDENT) +
-            tint(on ? glyph.chosen + ' ' : '  ', colour.cyan) +
-            tint(fit(`${g.at}  ${g.status}  ${g.goal}`, Math.max(8, room - 2)),
-              on ? colour.ink : g.status === 'failed' ? colour.red : colour.muted)
-        );
+        rows.push(row(width,
+          ' '.repeat(INDENT),
+          tint(on ? glyph.chosen + ' ' : '  ', colour.cyan),
+          tint(`${g.at}  ${g.status}  ${g.goal}`, on ? colour.ink : g.status === 'failed' ? colour.red : colour.muted)
+        ));
       });
       rows.push(line(say.places.openARow, colour.dim));
       break;
@@ -355,12 +367,11 @@ function placeRows(state: State, width: number): string[] {
       state.conversations.forEach((c, i) => {
         const on = i === state.conversationAt;
         const mine = c.id === state.sessionId ? ` · ${say.places.thisSession}` : '';
-        rows.push(
-          ' '.repeat(INDENT) +
-            tint(on ? glyph.chosen + ' ' : '  ', colour.cyan) +
-            tint(fit(`${c.at}  ${c.goals}  ${c.last}${mine}`, Math.max(8, room - 2)),
-              on ? colour.ink : colour.muted)
-        );
+        rows.push(row(width,
+          ' '.repeat(INDENT),
+          tint(on ? glyph.chosen + ' ' : '  ', colour.cyan),
+          tint(`${c.at}  ${c.goals}  ${c.last}${mine}`, on ? colour.ink : colour.muted)
+        ));
       });
       rows.push(line(say.places.resume, colour.dim));
       break;
@@ -388,15 +399,15 @@ function launcherRows(state: State, width: number): string[] {
   for (const place of list) {
     const on = place.id === here?.id;
     const room = Math.max(8, width - INDENT - 6);
-    rows.push(
-      ' '.repeat(INDENT) +
-        tint(on ? glyph.chosen : glyph.other, on ? colour.cyan : colour.dim) + ' ' +
-        // The place's OWN number, not its position — it does not move as a
-        // query narrows, so a number a person learned stays true.
-        tint(String(place.number), colour.dim) + '  ' +
-        tint(fit(place.name(say), room), on ? colour.ink : colour.muted) +
-        tint('  ' + place.hint(say), colour.dim)
-    );
+    rows.push(row(width,
+      ' '.repeat(INDENT),
+      tint(on ? glyph.chosen : glyph.other, on ? colour.cyan : colour.dim), ' ',
+      // The place's OWN number, not its position — it does not move as a query
+      // narrows, so a number a person learned stays true.
+      tint(String(place.number), colour.dim), '  ',
+      tint(place.name(say), on ? colour.ink : colour.muted),
+      tint('  ' + place.hint(say), colour.dim)
+    ));
   }
   return rows;
 }
