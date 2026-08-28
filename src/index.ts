@@ -410,7 +410,14 @@ function key(k: Key) {
   //
   // Only while something is actually waiting, so these letters are ordinary
   // text every other moment. A key that means one thing sometimes and another
-  // thing the rest of the time is only safe when the screen says which.
+  // thing the rest of the time is only safe when the screen says which — and
+  // the screen does: the request is on it, with its four answers, and the rail
+  // reads `N waiting`.
+  //
+  // A `y` typed BEFORE a request exists is therefore just a `y`, and goes into
+  // the composer like any other character. Observed while testing on
+  // 2026-08-28, and correct: the alternative is a console that swallows a
+  // keystroke because of something that has not happened yet.
   if (waiting.length > 0 && !k.ctrl && 'ycrn'.includes(k.text)) {
     const answer: Answer =
       k.text === 'y' ? 'once' : k.text === 'c' ? 'command' : k.text === 'r' ? 'row' : 'refuse';
