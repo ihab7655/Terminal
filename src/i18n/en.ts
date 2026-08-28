@@ -24,6 +24,38 @@ export const en: Catalogue = {
     folds: 'Tab folds',
     rowsBelow: {one: '{n} row below · PgDn', other: '{n} rows below · PgDn'}
   },
+  session: 'session',
+  keySheet: [
+    ['Enter', 'send · or open the chosen place'],
+    ['↑ ↓', 'what you typed before · or choose a place'],
+    ['Tab', 'unfold every output'],
+    ['click', 'unfold one row'],
+    ['^K', 'places'],
+    ['/', 'places, filtered by what follows'],
+    ['y c r n', 'answer a held call'],
+    ['Esc', 'close what is open, then stop the goal'],
+    ['^C', 'quit']
+  ],
+  modes: {
+    automatic: 'it does not ask. It carries on.',
+    approval: 'it stops where the policy says to stop',
+    plan: 'it shows the plan. No tool is called.',
+    separate: 'what it may do is a separate table, and this does not touch it',
+    forbiddenHolds: 'forbidden holds in every mode'
+  },
+
+  places: {
+    title: 'PLACES',
+    keys: 'Keys', keysHint: 'what every key does here',
+    mode: 'How it runs', modeHint: 'whether it stops and comes back to you',
+    policy: 'What it may do', policyHint: 'set by you, read in every mode',
+    language: 'Language', languageHint: 'every word this console writes',
+    workspace: 'Workspace', workspaceHint: 'where work lands, and this session',
+    engine: 'Engine', engineHint: 'what it was given, and whether it answered',
+    choose: '↑↓ choose · Enter open · Esc close',
+    nothingMatches: 'nothing by that name'
+  },
+
   planned: {
     heading: 'the plan it produced',
     nothingRan: 'no tool was called',

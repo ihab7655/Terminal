@@ -15,9 +15,13 @@
 import {colour, paint as tint} from './style.js';
 import {width as columnsOf} from './text.js';
 
-export type RailEdge = 'top' | 'bottom';
+export type RailEdge = 'top' | 'bottom' | 'section';
 
 const CORNER: Record<RailEdge, [string, string]> = {
+  // A section rail has no corners: it divides one screen rather than closing a
+  // frame, and a corner there would read as a second window opening inside the
+  // first.
+  section: ['─', '─'],
   top: ['╭', '╮'],
   bottom: ['╰', '╯']
 };

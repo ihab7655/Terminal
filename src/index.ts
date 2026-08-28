@@ -13,8 +13,11 @@ import {
   type State
 } from './console.js';
 import {isFailure, openEngine, type Engine} from './engine.js';
+import {chosen, launcherUp, offered} from './console.js';
+import {queryOf} from './places/registry.js';
 import {workspaceName, standing} from './session.js';
 import {load, save, type Settings, type Standing} from './settings/store.js';
+import {catalogues} from './i18n/index.js';
 import type {Answer, ApprovalRequest, Live} from './policy/middleware.js';
 import {next as newerInHistory, previous as olderInHistory, remember} from './history.js';
 import {onKey, type Key} from './keys.js';
@@ -98,7 +101,15 @@ const live: Live = {
   }
 };
 
-let state: State = {...emptyState(), workspace: workspaceName(here.workspace), language: settings.language, mode: settings.mode};
+let state: State = {
+  ...emptyState(),
+  workspace: workspaceName(here.workspace),
+  language: settings.language,
+  mode: settings.mode,
+  sessionId: here.sessionId,
+  policy: Object.entries(settings.policy),
+  languages: [...catalogues].map(([id, c]) => [id, c.name] as const)
+};
 
 // The engine, once it answers. Absent means the console is usable and says so
 // when asked to do something that needs one — not that it is broken.
@@ -204,6 +215,40 @@ async function leave(): Promise<never> {
 function key(k: Key) {
   if (k.ctrl && k.text === 'c') {
     void leave();
+    return;
+  }
+
+  // ── WHAT IS OPEN OWNS THE KEYBOARD ──────────────────────────────────────
+  //
+  // Esc clears the INNERMOST thing: a place, then the launcher, then the
+  // running goal. That layering is only safe because the closing rail always
+  // says what Esc will do right now — the rule this console already followed
+  // when it offered `Esc stops` only while something was stoppable.
+  if (!opening.done) {
+    // handled below — the opening owns every key until it ends
+  } else if (state.place !== null) {
+    if (k.name === 'escape' || (k.ctrl && k.text === 'k')) {
+      edit(s => ({...s, place: null, launcher: {open: k.ctrl === true, at: 0}}));
+      return;
+    }
+    if (k.name === 'up' || k.name === 'down' || k.name === 'enter') return;
+  } else if (launcherUp(state)) {
+    if (k.name === 'escape' || (k.ctrl && k.text === 'k')) {
+      edit(s => ({...s, launcher: {open: false, at: 0}, input: queryOf(s.input) === null ? s.input : '', caret: 0}));
+      return;
+    }
+    if (k.name === 'up') { edit(s => ({...s, launcher: {...s.launcher, at: Math.max(0, s.launcher.at - 1)}})); return; }
+    if (k.name === 'down') {
+      edit(s => ({...s, launcher: {...s.launcher, at: Math.min(offered(s).length - 1, s.launcher.at + 1)}}));
+      return;
+    }
+    if (k.name === 'enter') {
+      const place = chosen(state);
+      if (place) edit(s => ({...s, place: place.id, launcher: {open: false, at: 0}, input: '', caret: 0}));
+      return;
+    }
+  } else if (k.ctrl && k.text === 'k') {
+    edit(s => ({...s, launcher: {open: true, at: 0}}));
     return;
   }
 
@@ -427,9 +472,11 @@ if (process.env['DEMO']) {
           id: 'engine-failed',
           lines: [`the engine did not open — ${opened.reason}`]
         });
+        edit(s => ({...s, engineFacts: [`engine · did not open`, opened.reason, ...opened.captured]}));
         return;
       }
       engine = opened;
+      edit(s => ({...s, engineFacts: [`engine · open`, `workspace · ${workspaceName(here.workspace)}`, `session · ${here.sessionId}`]}));
       // Every execution event, through the adapter, in the order it arrived.
       opened.watch(event => {
         const item = toItem(event);

@@ -7,6 +7,7 @@ import {cell, fit, fitStyled, wrap} from './text.js';
 import {START, reflow, scroll, windowOnto, type ScrollCommand, type Viewport} from './viewport.js';
 import {catalogueFor, DEFAULT_LANGUAGE, type Catalogue} from './i18n/index.js';
 import type {Mode} from './settings/store.js';
+import {matching, PLACES, queryOf, type Place, type PlaceId} from './places/registry.js';
 
 // The console: content in, one frame out.
 //
@@ -171,6 +172,24 @@ export type State = {
   mode: Mode;
   /** How many calls are held, waiting for an answer. */
   waiting: number;
+  /**
+   * The place that is open over the console, or none.
+   *
+   * OVER, not instead of: the transcript stays behind it, because the reason to
+   * open a place is usually something you just read. Esc clears the innermost
+   * thing — a place, then the launcher, then the running goal.
+   */
+  place: PlaceId | null;
+  /** Whether the launcher is up, and which row is chosen. */
+  launcher: {open: boolean; at: number};
+  /** What the console permits here, as rows a place can list. */
+  policy: ReadonlyArray<readonly [string, string]>;
+  /** The languages this console has, and how each names itself. */
+  languages: ReadonlyArray<readonly [string, string]>;
+  /** The conversation every goal from this console belongs to. */
+  sessionId: string;
+  /** What the engine was given, and whether it answered — lines, already said. */
+  engineFacts: readonly string[];
 };
 
 export const emptyState = (): State => ({
@@ -186,7 +205,13 @@ export const emptyState = (): State => ({
   workspace: '',
   language: DEFAULT_LANGUAGE,
   mode: 'automatic',
-  waiting: 0
+  waiting: 0,
+  place: null,
+  launcher: {open: false, at: 0},
+  policy: [],
+  languages: [],
+  sessionId: '',
+  engineFacts: []
 });
 
 const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -750,6 +775,20 @@ export function frame(state: State): {rows: string[]; view: Viewport} {
   while (body.length < bodyRows) body.push('');
   if (above > 0) body[0] = tint(`  ↑ ${above} above`, colour.dim);
 
+  // ── WHAT IS OPEN OVER THE CONSOLE ─────────────────────────────────────────
+  //
+  // A place or the launcher sits at the BOTTOM of the transcript's own space,
+  // over the rows there — the reason to open one is usually something just
+  // read, and the transcript above it stays visible. It is not a screen you go
+  // to: going somewhere to answer a yes/no is the barrier that got a whole
+  // screen deleted once, and the same reasoning applies to choosing a mode.
+  //
+  // It replaces rows rather than reserving any: the frame is the same height,
+  // and what it covers is scrolled past, never dropped.
+  const over = state.place ? placeRows(state, width) : launcherUp(state) ? launcherRows(state, width) : [];
+  for (let i = 0; i < over.length && i < body.length; i++)
+    body[body.length - over.length + i] = over[i]!;
+
   const [composer, keys] = footerRows(state, width, below);
   // A plain line between the transcript and the composer, as the prototype
   // draws it: what has been said is finished, what is being typed is not, and
@@ -795,6 +834,97 @@ function status(state: State): string {
   // the console asserting a state the engine no longer has.
   return state.items.length === 0 ? say.rail.ready : say.rail.idle;
 }
+
+/**
+ * A place, open over the console.
+ *
+ * Every one of these shows something the console or the engine already holds —
+ * nothing here computes a fact of its own, and nothing claims a state it
+ * cannot point at.
+ */
+function placeRows(state: State, width: number): string[] {
+  const say = catalogueFor(state.language);
+  const place = PLACES.find(p => p.id === state.place);
+  if (!place) return [];
+  const room = Math.max(8, width - INDENT - 2);
+  const line = (text: string, c: string = colour.muted) =>
+    ' '.repeat(INDENT) + tint(fit(text, room), c);
+  const rows = [rail(width, 'section', place.name(say), place.hint(say))];
+
+  switch (place.id) {
+    case 'keys':
+      for (const [k, what] of say.keySheet) rows.push(line(`${k}   ${what}`, colour.muted));
+      break;
+    case 'mode':
+      for (const m of ['automatic', 'approval', 'plan'] as const)
+        rows.push(line(`${m === state.mode ? '◆' : '◈'} ${m}   ${say.modes[m]}`,
+          m === state.mode ? colour.ink : colour.muted));
+      rows.push(line(say.modes.separate, colour.dim));
+      break;
+    case 'policy':
+      for (const [id, value] of state.policy)
+        rows.push(line(`${id}   ${value}`, value === 'forbidden' ? colour.red : colour.muted));
+      rows.push(line(say.modes.forbiddenHolds, colour.dim));
+      break;
+    case 'language':
+      for (const [id, name] of state.languages)
+        rows.push(line(`${id === state.language ? '◆' : '◈'} ${name}`,
+          id === state.language ? colour.ink : colour.muted));
+      break;
+    case 'workspace':
+      rows.push(line(`${say.places.workspace}   ${state.workspace}`, colour.muted));
+      rows.push(line(`${say.session}   ${state.sessionId}`, colour.muted));
+      break;
+    case 'engine':
+      for (const l of state.engineFacts) rows.push(line(l, colour.muted));
+      break;
+  }
+  return rows;
+}
+
+/** The launcher: one row per place, under a rail of its own. */
+function launcherRows(state: State, width: number): string[] {
+  const say = catalogueFor(state.language);
+  const list = offered(state);
+  const here = chosen(state);
+  const rows = [
+    rail(width, 'section', say.places.title, list.length === PLACES.length ? '' : String(list.length))
+  ];
+  if (list.length === 0) rows.push(' '.repeat(INDENT) + tint(say.places.nothingMatches, colour.dim));
+  for (const place of list) {
+    const on = place.id === here?.id;
+    const room = Math.max(8, width - INDENT - 6);
+    rows.push(
+      ' '.repeat(INDENT) +
+        tint(on ? '◆' : '◈', on ? colour.cyan : colour.dim) + ' ' +
+        // The place's OWN number, not its position — it does not move as a
+        // query narrows, so a number a person learned stays true.
+        tint(String(place.number), colour.dim) + '  ' +
+        tint(fit(place.name(say), room), on ? colour.ink : colour.muted) +
+        tint('  ' + place.hint(say), colour.dim)
+    );
+  }
+  return rows;
+}
+
+/**
+ * The places a query means, and the one chosen.
+ *
+ * Read from the same registry the launcher lists and `/name` filters, so the
+ * two entry points can never offer different things.
+ */
+export function offered(state: State): Place[] {
+  return matching(queryOf(state.input), catalogueFor(state.language));
+}
+
+export const chosen = (state: State): Place | undefined => {
+  const list = offered(state);
+  return list[Math.min(Math.max(0, state.launcher.at), Math.max(0, list.length - 1))];
+};
+
+/** Is the launcher showing — raised by a key, or by a line that starts with `/`? */
+export const launcherUp = (state: State): boolean =>
+  state.launcher.open || queryOf(state.input) !== null;
 
 /** Draw it. The only place a frame reaches the screen. */
 export function draw(state: State): State {

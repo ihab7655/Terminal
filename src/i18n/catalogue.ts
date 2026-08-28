@@ -63,6 +63,28 @@ export type Catalogue = {
     readonly rowsBelow: Plural;
   };
 
+  readonly session: string;
+  readonly keySheet: ReadonlyArray<readonly [string, string]>;
+  readonly modes: {
+    readonly automatic: string;
+    readonly approval: string;
+    readonly plan: string;
+    readonly separate: string;
+    readonly forbiddenHolds: string;
+  };
+
+  readonly places: {
+    readonly title: string;
+    readonly keys: string; readonly keysHint: string;
+    readonly mode: string; readonly modeHint: string;
+    readonly policy: string; readonly policyHint: string;
+    readonly language: string; readonly languageHint: string;
+    readonly workspace: string; readonly workspaceHint: string;
+    readonly engine: string; readonly engineHint: string;
+    readonly choose: string;
+    readonly nothingMatches: string;
+  };
+
   readonly planned: {
     readonly heading: string;
     readonly nothingRan: string;
