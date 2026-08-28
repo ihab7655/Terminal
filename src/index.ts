@@ -14,6 +14,8 @@ import {
 } from './console.js';
 import {isFailure, openEngine, type Engine} from './engine.js';
 import {workspaceName, standing} from './session.js';
+import {load, save, type Settings, type Standing} from './settings/store.js';
+import type {Answer, ApprovalRequest, Live} from './policy/middleware.js';
 import {next as newerInHistory, previous as olderInHistory, remember} from './history.js';
 import {onKey, type Key} from './keys.js';
 import {advance, openingRows, skipOpening, startOpening, TICK_MS, type Opening} from './opening.js';
@@ -33,7 +35,50 @@ import {paint, releaseScreen, screenSize, takeScreen} from './screen.js';
 let opening: Opening = startOpening();
 // The workspace is on the rail from the first frame — it is where files land,
 // and a person should never have to discover that afterwards.
-let state: State = {...emptyState(), workspace: workspaceName(standing().workspace)};
+// ── WHAT THIS CONSOLE IS, BEFORE IT DRAWS ANYTHING ──────────────────────────
+//
+// Read once. A file that could not be read is not an error — it yields
+// defaults and SAYS which fields were lost, because behaving differently from
+// what a person configured without telling them is the one outcome worth
+// preventing.
+const remembered = load();
+let settings: Settings = remembered.settings;
+const here = standing(settings.session.id ?? undefined);
+settings = {...settings, session: {id: here.sessionId}};
+
+/** Everything waiting for an answer, oldest first. */
+type Waiting = {request: ApprovalRequest; answer: (a: Answer) => void};
+const waiting: Waiting[] = [];
+
+/**
+ * What the middleware reads at the moment it is called — never a copy taken at
+ * boot. This is what lets the mode and the table change mid-session with no
+ * restart: the hook closes over these functions, not over their values.
+ */
+const live: Live = {
+  mode: () => settings.mode,
+  table: () => settings.policy,
+  standing: () => settings.standing,
+  workspace: () => here.workspace,
+  ask: request =>
+    new Promise<Answer>(resolve => {
+      waiting.push({request, answer: resolve});
+      edit(s => ({...s, waiting: waiting.length}));
+    }),
+  remember: (request, answer) => {
+    const kept: Standing = {
+      kind: answer === 'command' ? 'command' : 'effect',
+      value: answer === 'command' ? (request.target ?? request.toolName) : (request.effects[0] ?? 'undeclared'),
+      workspace: request.workspace,
+      granted: new Date().toISOString().split('T')[0] ?? ''
+    };
+    settings = {...settings, standing: [...settings.standing, kept]};
+    const trouble = save(settings);
+    if (trouble) add({kind: 'noted', id: `noted-${Date.now()}`, lines: [`could not remember that: ${trouble}`]});
+  }
+};
+
+let state: State = {...emptyState(), workspace: workspaceName(here.workspace), language: settings.language, mode: settings.mode};
 
 // The engine, once it answers. Absent means the console is usable and says so
 // when asked to do something that needs one — not that it is broken.
@@ -44,7 +89,6 @@ let engine: Engine | null = null;
 // A remembered session id would be continued here once settings exist; until
 // then each launch is its own conversation, which is still one more than the
 // engine had before.
-const here = standing();
 // The engine is opened while the opening plays, and a person can type before it
 // answers. Recorded here rather than lost: "no engine" is only true once the
 // door has actually reported, and saying it while the engine is still opening
@@ -227,6 +271,29 @@ function key(k: Key) {
       break;
   }
 
+  // ── ANSWERING A HELD CALL ───────────────────────────────────────────────
+  //
+  // Only while something is actually waiting, so these letters are ordinary
+  // text every other moment. A key that means one thing sometimes and another
+  // thing the rest of the time is only safe when the screen says which.
+  if (waiting.length > 0 && !k.ctrl && 'ycrn'.includes(k.text)) {
+    const answer: Answer =
+      k.text === 'y' ? 'once' : k.text === 'c' ? 'command' : k.text === 'r' ? 'row' : 'refuse';
+    const held = waiting.shift()!;
+    add({
+      kind: 'noted',
+      id: `answered-${held.request.id}`,
+      lines: [
+        answer === 'refuse'
+          ? `refused ${held.request.toolName}`
+          : `allowed ${held.request.toolName}${answer === 'once' ? '' : ' — and kept'}`
+      ]
+    });
+    edit(s => ({...s, waiting: waiting.length}));
+    held.answer(answer);
+    return;
+  }
+
   if (k.ctrl || k.text === '') return;
   edit(s => ({
     ...s,
@@ -327,7 +394,7 @@ if (process.env['DEMO']) {
     // thing it describes is happening is worse than no mark. It also stays in
     // the log afterwards, where it explains the one pause this console has.
     add({kind: 'noted', id: 'waking', lines: ['waking the engine']});
-    engineOpening = openEngine().then(opened => {
+    engineOpening = openEngine(live).then(opened => {
       if (isFailure(opened)) {
         add({
           kind: 'noted',

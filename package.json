@@ -7,7 +7,7 @@
     "dev": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json",
-    "test": "tsx src/viewport.test.ts && tsx src/text.test.ts && tsx src/keys.test.ts && tsx src/adapter.test.ts && tsx src/cancel.test.ts && tsx src/history.test.ts && tsx src/fold.test.ts && tsx src/rail.test.ts && tsx src/session.test.ts && tsx src/responsive.test.ts && tsx src/boundary.test.ts && tsx src/i18n/i18n.test.ts && node .preview/prove-repaint.mjs"
+    "test": "tsx src/viewport.test.ts && tsx src/text.test.ts && tsx src/keys.test.ts && tsx src/adapter.test.ts && tsx src/cancel.test.ts && tsx src/history.test.ts && tsx src/fold.test.ts && tsx src/rail.test.ts && tsx src/session.test.ts && tsx src/responsive.test.ts && tsx src/boundary.test.ts && tsx src/i18n/i18n.test.ts && tsx src/policy/middleware.test.ts && tsx src/policy/policy.test.ts && tsx src/settings/settings.test.ts && node .preview/prove-repaint.mjs"
   },
   "dependencies": {},
   "devDependencies": {

@@ -5,6 +5,8 @@ import {paint, screenSize} from './screen.js';
 import {INVERSE, RESET, colour, paint as tint} from './style.js';
 import {cell, fit, fitStyled, wrap} from './text.js';
 import {START, reflow, scroll, windowOnto, type ScrollCommand, type Viewport} from './viewport.js';
+import {catalogueFor, DEFAULT_LANGUAGE, type Catalogue} from './i18n/index.js';
+import type {Mode} from './settings/store.js';
 
 // The console: content in, one frame out.
 //
@@ -126,6 +128,20 @@ export type State = {
    * the engine's tools anchor here whether or not anyone was told.
    */
   workspace: string;
+  /**
+   * The language every word this console writes is said in.
+   *
+   * Held as an id and resolved at the moment of drawing, so switching it
+   * re-renders the whole transcript at the next repaint — the rows are built
+   * from structured items on every frame, not stored as sentences. What cannot
+   * change is prose the engine already spoke: it was generated once, in the
+   * language of the request, and nothing re-writes what was said.
+   */
+  language: string;
+  /** How the console runs: whether it stops and comes back to you. */
+  mode: Mode;
+  /** How many calls are held, waiting for an answer. */
+  waiting: number;
 };
 
 export const emptyState = (): State => ({
@@ -138,7 +154,10 @@ export const emptyState = (): State => ({
   history: NO_HISTORY,
   open: new Set<string>(),
   stoppable: false,
-  workspace: ''
+  workspace: '',
+  language: DEFAULT_LANGUAGE,
+  mode: 'automatic',
+  waiting: 0
 });
 
 const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -369,6 +388,7 @@ const titleOf = (verb: string) =>
     .join(' ');
 
 function actionRows(action: Action, state: State, width: number): string[] {
+  const say = catalogueFor(state.language);
   const open = action.ids.some(id => state.open.has(id));
   const room = Math.max(8, width - INDENT - MARK);
 
@@ -382,7 +402,7 @@ function actionRows(action: Action, state: State, width: number): string[] {
         ? tint('✕', colour.red)
         : tint('●', colour.cyanSoft);
     return [
-      ' '.repeat(INDENT) + mark + ' ' + tint(fit(sentenceOf(action), room), colour.ink)
+      ' '.repeat(INDENT) + mark + ' ' + tint(fit(sentenceOf(action, say), room), colour.ink)
     ];
   }
 
@@ -558,6 +578,7 @@ export function toggleAllOutput(state: State): State {
 
 /** The composer and what the keys do — always the last two rows of the frame. */
 function footerRows(state: State, width: number, below: number): string[] {
+  const say = catalogueFor(state.language);
   const before = state.input.slice(0, state.caret);
   const at = state.input.slice(state.caret, state.caret + 1) || ' ';
   const after = state.input.slice(state.caret + 1);
@@ -567,14 +588,14 @@ function footerRows(state: State, width: number, below: number): string[] {
     state.input.length === 0
       ? prompt +
         INVERSE + ' ' + RESET +
-        tint(' say something to the engine', colour.muted) +
+        tint(' ' + (state.stoppable ? say.composer.whileWorking : say.composer.placeholder), colour.muted) +
         // Offered where the composer is not being used, and gone the moment a
         // person types. Appended as ORDINARY TEXT with a separator — an earlier
         // version padded it out with a run of spaces, which is saying where to
         // put something rather than what to show. `fitStyled` below cuts this
         // line at the real width like any other, so a narrow window loses the
         // hint before it loses the prompt, with no arithmetic here.
-        tint(' · ? keys', colour.dim)
+        tint(' · ' + say.composer.keysHint, colour.dim)
       : prompt + colour.ink + before + INVERSE + at + RESET + colour.ink + after + RESET;
 
   // ── WHAT THE CLOSING RAIL CARRIES ──────────────────────────────────────────
@@ -594,11 +615,11 @@ function footerRows(state: State, width: number, below: number): string[] {
   const folded = state.items.some(i => i.kind === 'did' && foldable(i));
   const nowKey =
     below > 0
-      ? `${below} row${below === 1 ? '' : 's'} below · PgDn`
+      ? say.plural(say.keys.rowsBelow, below)
       : state.stoppable
-        ? 'Esc stops'
+        ? say.keys.stops
         : folded
-          ? `Tab ${state.open.size > 0 ? 'folds' : 'unfolds'}`
+          ? state.open.size > 0 ? say.keys.folds : say.keys.unfolds
           : '';
   const keys = nowKey;
 
@@ -660,7 +681,9 @@ export function frame(state: State): {rows: string[]; view: Viewport} {
       ...body,
       divider,
       composer!,
-      rail(width, 'bottom', state.workspace, keys!)
+      // The two facts a person must never look up — how it runs, and where work
+      // lands. Joined as content; the rail measures and cuts them.
+      rail(width, 'bottom', [state.mode, state.workspace].filter(Boolean).join(' · '), keys!)
     ],
     view
   };
@@ -678,13 +701,17 @@ const identity = (state: State): string =>
  * is drawn from — never a second source that could disagree with the screen.
  */
 function status(state: State): string {
-  if (state.stoppable) return 'working';
-  if (state.items.some(i => i.kind === 'noted' && i.id === 'engine-failed')) return 'no engine';
+  const say = catalogueFor(state.language);
+  // Waiting outranks working: one of them is the engine's business and the
+  // other is yours, and only one of them stops if you look away.
+  if (state.waiting > 0) return say.plural(say.rail.waiting, state.waiting);
+  if (state.stoppable) return say.rail.working;
+  if (state.items.some(i => i.kind === 'noted' && i.id === 'engine-failed')) return say.rail.noEngine;
   // There is no 'waiting on you' any more. The engine has no paused state: when
   // it needs something it says so and the goal ENDS, so the console is idle and
   // the question is simply the last thing on screen. Claiming otherwise would be
   // the console asserting a state the engine no longer has.
-  return state.items.length === 0 ? 'ready' : 'idle';
+  return state.items.length === 0 ? say.rail.ready : say.rail.idle;
 }
 
 /** Draw it. The only place a frame reaches the screen. */

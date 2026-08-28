@@ -1,5 +1,5 @@
 import type {EngineEvent} from './adapter.js';
-import {makeCancellation} from './cancel.js';
+import {makeControl, type Control, type Live} from './policy/middleware.js';
 
 // ── The terminal's one door to the engine ────────────────────────────────────
 //
@@ -105,7 +105,10 @@ const message = (error: unknown) =>
  * cannot reach its store, is an ordinary state for a console to be in and to
  * report. It is not an exception for the loop to survive.
  */
-export async function openEngine(enginePath = DEFAULT_ENGINE): Promise<Engine | EngineFailure> {
+export async function openEngine(
+  live: Live,
+  enginePath = DEFAULT_ENGINE
+): Promise<Engine | EngineFailure> {
   // The engine's logger has no silent level; `error` is as quiet as it goes,
   // and anything it still writes is captured below.
   process.env['LOG_LEVEL'] ??= 'error';
@@ -145,10 +148,10 @@ export async function openEngine(enginePath = DEFAULT_ENGINE): Promise<Engine | 
     const config = core.loadRuntimeConfigFromEnv();
     // The engine's own signal class, handed to the host's own middleware — the
     // engine tests the thrown value with `instanceof`, so it has to be this one.
-    const cancellation = makeCancellation(core.MiddlewareControlSignal);
+    const control = makeControl(core.MiddlewareControlSignal, live);
     const app = await core.ApplicationRuntime.create({
       config,
-      middleware: [cancellation.middleware]
+      middleware: [control.middleware]
     });
 
     return {
@@ -175,6 +178,7 @@ export async function openEngine(enginePath = DEFAULT_ENGINE): Promise<Engine | 
       // event; here the signal is simply absorbed by the one who threw it.
       // Anything else still rejects, and the caller still sees it.
       submit: async req => {
+        const goalId = req.id;
         try {
           const result = await (
             app['executeGoal'] as (r: {
@@ -196,11 +200,14 @@ export async function openEngine(enginePath = DEFAULT_ENGINE): Promise<Engine | 
           });
           return {success: result?.success ?? false, status: result?.status ?? 'unknown'};
         } catch (error) {
-          if (!cancellation.owns(error)) throw error;
-          return {success: false, status: 'stopped'};
+          if (!control.owns(error)) throw error;
+          // Plan mode is an ENDING, not a stop: the engine produced the plan,
+          // reported it, and ran nothing. Said apart so the console never
+          // draws one as the other.
+          return {success: false, status: control.planOnly(goalId) ? 'planned' : 'stopped'};
         }
       },
-      cancel: goalId => cancellation.cancel(goalId),
+      cancel: goalId => control.cancel(goalId),
       shutdown: () => (app['shutdown'] as () => Promise<void>)()
     };
   } catch (error) {

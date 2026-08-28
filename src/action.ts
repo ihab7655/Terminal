@@ -16,6 +16,8 @@
 // should have done. One line, opened when it matters.
 
 import type {Item} from './console.js';
+import {en} from './i18n/en.js';
+import {fill, type Catalogue, type Plural} from './i18n/catalogue.js';
 
 type Did = Extract<Item, {kind: 'did'}>;
 
@@ -43,38 +45,39 @@ export function actionsOf(items: readonly Did[]): Action[] {
   return actions;
 }
 
-// The sentence a tool makes when it is not being looked at. Written per tool
-// because "Ran 3 write_files" is not English and a reader should never have to
-// translate a function name back into what it did.
+// The sentence a tool makes when it is not being looked at. Keyed by the tool
+// the engine named, because that is the ONLY thing the console is handed: the
+// `tool.called` payload carries toolName, args, success, exitCode, durationMs
+// and stdoutSummary — and no effects (verified at the publish site,
+// workers/tool-caller.ts:271). Keying on a declared effect would mean the
+// console holding its own name-to-effect map: a copy of engine knowledge it is
+// never given, stale the moment the engine generates a tool.
 //
-// A tool with no sentence here falls back to its own name, which is honest —
-// the console does not know every tool the engine may grow, and inventing a
-// verb for one it has never seen would be a guess printed as a fact.
-const SENTENCES: Record<string, {one: string; many: string}> = {
-  bash: {one: 'Ran 1 shell command', many: 'Ran $n shell commands'},
-  write_file: {one: 'Wrote 1 file', many: 'Wrote $n files'},
-  edit_file: {one: 'Edited 1 file', many: 'Edited $n files'},
-  read_file: {one: 'Read 1 file', many: 'Read $n files'},
-  list_files: {one: 'Listed 1 directory', many: 'Listed $n directories'},
-  run_artifact: {one: 'Ran the project', many: 'Ran the project $n times'},
-  run_tests: {one: 'Ran the tests', many: 'Ran the tests $n times'},
-  execute_code: {one: 'Ran a snippet', many: 'Ran $n snippets'},
-  web: {one: 'Searched the web', many: 'Searched the web $n times'},
-  web_search: {one: 'Searched the web', many: 'Searched the web $n times'}
+// A tool with no phrase falls back to its own name, which is honest — the
+// console cannot know every tool the engine may grow, and inventing a verb for
+// one it has never seen would be a guess printed as a fact. In every language:
+// the name passes through as the identifier it is.
+const PHRASE: Record<string, keyof Catalogue['did']> = {
+  bash: 'shell',
+  write_file: 'wrote',
+  edit_file: 'edited',
+  read_file: 'read',
+  list_files: 'listed',
+  run_artifact: 'ranProject',
+  run_tests: 'ranTests',
+  execute_code: 'snippet',
+  web: 'searched',
+  web_search: 'searched'
 };
 
-/** The one line this run reads as while folded. */
-export function sentenceOf(action: Action): string {
+/** The one line this run reads as while folded, in the language in use. */
+export function sentenceOf(action: Action, say: Catalogue = en): string {
   const n = action.items.length;
   const verb = action.items[0]!.verb;
-  const sentence = SENTENCES[verb];
-  const text = sentence
-    ? n === 1
-      ? sentence.one
-      : sentence.many.replace('$n', String(n))
-    : n === 1
-      ? `Called ${verb}`
-      : `Called ${verb} ${n} times`;
+  const key = PHRASE[verb];
+  const text = key
+    ? say.plural(say.did[key] as Plural, n)
+    : fill(say.plural(say.did.other, n), {tool: verb});
 
   // How much code changed, on the sentence itself. A person scanning back wants
   // to know a write was two lines rather than two hundred without opening it,
@@ -92,16 +95,16 @@ export function sentenceOf(action: Action): string {
     added === 0 && removed === 0
       ? ''
       : removed === 0
-        ? `+${added} ${added === 1 ? 'line' : 'lines'}`
+        ? say.plural(say.changes.added, added)
         : added === 0
-          ? `-${removed} ${removed === 1 ? 'line' : 'lines'}`
+          ? say.plural(say.changes.removed, removed)
           : `+${added} -${removed}`;
 
   // A failure is not a detail of the sentence, it is the reason to open it. Said
   // plainly rather than left to a colour, which a screenshot or a colourblind
   // reader loses.
   const failed = action.items.filter(i => i.state === 'failed').length;
-  const note = failed === 0 ? '' : failed === n ? 'failed' : `${failed} failed`;
+  const note = failed === 0 ? '' : failed === n ? say.did.failed : say.plural(say.did.someFailed, failed);
 
   return [text, size, note].filter(Boolean).join(' · ');
 }
