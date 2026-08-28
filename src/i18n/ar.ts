@@ -50,6 +50,11 @@ export const ar: Catalogue = {
     }
   },
   session: 'الجلسة',
+  record: {
+    status: 'الحالة', attempts: 'المحاولات', took: 'استغرق', plan: 'الخطّة',
+    proved: 'أثبت', workers: 'العمّال', retries: 'الإعادات',
+    guardian: 'الحارس', nothing: 'لا شيء مسجَّل'
+  },
   keySheet: [
     ['Enter', 'أرسل · أو افتح المكان المختار'],
     ['↑ ↓', 'ما كتبتَه قبلاً · أو اختر مكاناً'],
@@ -113,6 +118,10 @@ export const ar: Catalogue = {
     workspace: 'مساحة العمل', workspaceHint: 'أين يقع العمل، وهذه الجلسة',
     engine: 'المحرّك', engineHint: 'بماذا زُوِّد، وهل أجاب',
     history: 'السجلّ', historyHint: 'كل هدف نفّذه هذا المحرّك',
+    inspector: 'المفتّش', inspectorHint: 'تنفيذ واحد، مقروءاً كاملاً',
+    capabilities: 'القدرات', capabilitiesHint: 'ما يستطيع المحرّك أن يمدّ يده إليه',
+    pickAGoal: 'افتح السجلّ واضغط Enter على هدف',
+    openARow: '↑↓ تحرّك · Enter افحص · Esc رجوع',
     loading: 'يقرأ السجلّ…',
     nothingYet: 'لا شيء في السجلّ بعد',
     choose: '↑↓ اختر · Enter افتح · Esc أغلق',

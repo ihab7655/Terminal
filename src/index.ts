@@ -244,6 +244,21 @@ function key(k: Key) {
       edit(s => ({...s, place: null, launcher: {open: k.ctrl === true, at: 0}}));
       return;
     }
+    // History is the one place with rows to walk: Enter on a goal opens the
+    // Inspector on it. Everywhere else these keys do nothing rather than
+    // something arbitrary.
+    if (state.place === 'history' && state.record !== null) {
+      if (k.name === 'up') { edit(s => ({...s, recordAt: Math.max(0, s.recordAt - 1)})); return; }
+      if (k.name === 'down') {
+        edit(s => ({...s, recordAt: Math.min((s.record?.length ?? 1) - 1, s.recordAt + 1)}));
+        return;
+      }
+      if (k.name === 'enter') {
+        const row = state.record[state.recordAt];
+        if (row && engine) inspect(row.id);
+        return;
+      }
+    }
     if (k.name === 'up' || k.name === 'down' || k.name === 'enter') return;
   } else if (launcherUp(state)) {
     if (k.name === 'escape' || (k.ctrl && k.text === 'k')) {
@@ -262,6 +277,24 @@ function key(k: Key) {
         // History is READ when it is opened, never held live: the event stream
         // is live-only and does not survive the process, so what happened
         // before comes from the engine's store or from nowhere.
+        if (place.id === 'capabilities' && engine) {
+          // A failure here is REPORTED, never swallowed into an empty list.
+          // It was swallowed once, and Capabilities read "nothing on record
+          // yet" for an engine holding eleven tools — an empty screen that
+          // asserted a fact instead of admitting a fault.
+          try {
+            edit(s => ({...s, capabilities: engine!.capabilities()}));
+          } catch (err) {
+            edit(s => ({...s, capabilities: []}));
+            add({kind: 'noted', id: `noted-${Date.now()}`,
+                 lines: [`could not read the capabilities: ${err instanceof Error ? err.message : String(err)}`]});
+          }
+        }
+        // The Inspector without a goal says how to pick one rather than showing
+        // an empty record, which would read as an execution that did nothing.
+        if (place.id === 'inspector' && state.inspecting === null)
+          edit(s => ({...s, inspecting: {goalId: '', status: '', attempts: null, durationMs: null,
+            workspace: null, tasks: [], evidence: [], workers: [], retries: [], guardian: []}}));
         if (place.id === 'history' && engine) {
           edit(s => ({...s, record: null}));
           void engine.goals(40).then(rows => {
@@ -458,6 +491,36 @@ function key(k: Key) {
  * that also printed the returned value would say the same thing twice, and the
  * two would disagree the moment the engine's own account is the better one.
  */
+/**
+ * Read ONE execution whole, and show it.
+ *
+ * `replay()` assembles a set of tables on demand — it is the counterpart of the
+ * live stream, which does not survive the process. So this is a read, it is
+ * only ever done when asked for, and the screen says it is reading rather than
+ * showing an empty record that would look like an execution that did nothing.
+ */
+function inspect(goalId: string): void {
+  edit(s => ({...s, place: 'inspector', inspecting: null}));
+  void engine!
+    .record(goalId)
+    .then(async r => {
+      if (r === null) { edit(s => ({...s, inspecting: null})); return; }
+      edit(s => ({...s, inspecting: {...r, guardian: []}}));
+      // Asked for separately and after, because it is optional and slower: the
+      // record is on screen while the advisory is still being computed, rather
+      // than both waiting on the slower of the two.
+      const advice = await engine!.guardian(goalId).catch(() => []);
+      edit(s => (s.inspecting && s.inspecting.goalId === goalId
+        ? {...s, inspecting: {...s.inspecting, guardian: advice}}
+        : s));
+    })
+    .catch((err: unknown) => {
+      add({kind: 'noted', id: `noted-${Date.now()}`,
+           lines: [`${catalogueFor(settings.language).outcome.endedBadly}: ${err instanceof Error ? err.message : String(err)}`]});
+      edit(s => ({...s, place: null}));
+    });
+}
+
 async function ask(goal: string): Promise<void> {
   // Wait for the door to finish answering before deciding there is nothing
   // behind it. Resolved already once it has, so a later goal pays nothing.

@@ -19,6 +19,21 @@ import {makeControl, type Control, type Live} from './policy/middleware.js';
 // it, a measured run put three frames out of forty-one on the screen and the
 // boot looked frozen.
 
+// ── The optional second door ────────────────────────────────────────────────
+//
+// `official-runtime` is a SEPARATE package that consumes the engine's public
+// SDK exactly as any host does — it is not part of engine-core and it is not
+// required for the console to run. It holds the Reliability & Cost Guardian,
+// which computes an advisory report about one execution and is, in its own
+// words, "advisory only — a report, never an action".
+//
+// Loaded by path like the engine, and its absence is an ORDINARY STATE: the
+// Inspector simply shows no guardian section. A console that refused to open
+// because an optional package was missing would have made it a requirement.
+const DEFAULT_RUNTIME =
+  process.env['OFFICIAL_RUNTIME_PATH'] ??
+  '/home/spark/agent-engine/packages/official-runtime/dist/index.js';
+
 const DEFAULT_ENGINE =
   process.env['ENGINE_PATH'] ?? '/home/spark/agent-engine/packages/engine-core/dist/index.js';
 
@@ -47,6 +62,14 @@ export type Engine = {
    * arrived — the window where a stop is worth most.
    */
   submit(req: Submission): Promise<{success: boolean; status: string}>;
+  /**
+   * What the engine can reach for right now.
+   *
+   * Read from the registry it actually holds — `context.toolRegistry` — not
+   * from a list kept here, so a capability the engine grew or generated shows
+   * up without this console being edited.
+   */
+  capabilities(): ReadonlyArray<{name: string; category: string}>;
   /** Every goal on record, newest first — `listGoals()` on the engine's store. */
   goals(limit?: number): Promise<readonly GoalRow[]>;
   /**
@@ -56,6 +79,14 @@ export type Engine = {
    * the event stream, which is live-only and does not survive the process.
    */
   record(goalId: string): Promise<ExecutionRecord | null>;
+  /**
+   * What the Guardian concluded about one execution, if it is available.
+   *
+   * Advisory only, and optional: an empty list means the report said nothing or
+   * the package is not there, and the Inspector draws neither differently from
+   * the other, because a reader is owed neither a false alarm nor a false calm.
+   */
+  guardian(goalId: string): Promise<readonly string[]>;
   /**
    * Amend a goal that is already running (ADR-012).
    *
@@ -253,9 +284,53 @@ export async function openEngine(
       steer: async (goalId, text) => {
         await (app['steerGoal'] as (g: string, t: string) => Promise<unknown>)(goalId, text);
       },
+      capabilities: () => {
+        // BOUND, not detached. These are methods on a class and they use
+        // `this`; pulling one out of the object and calling it loses the
+        // receiver, and `this.tools` is then undefined. It failed silently the
+        // first time — the catch below turned a TypeError into an empty list,
+        // and Capabilities read "nothing on record yet" for an engine holding
+        // eleven tools.
+        const reg = (app['context'] as {toolRegistry: Record<string, unknown>}).toolRegistry;
+        const names = (reg['list'] as () => string[]).call(reg);
+        const get = (n: string) =>
+          (reg['get'] as (x: string) => {planning?: {category?: string}} | undefined).call(reg, n);
+        return names.map(name => ({
+          name,
+          // The engine's own grouping, when it declares one. Never guessed
+          // from the name — a tool the engine generates would be grouped by a
+          // rule this console invented, which is exactly the closed table the
+          // engine removed.
+          category: get(name)?.planning?.category ?? 'other'
+        })).sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+      },
+      guardian: async goalId => {
+        try {
+          const rt = (await import(DEFAULT_RUNTIME)) as {
+            createGuardian(storage: unknown, recorder: unknown): {
+              observe(id: string): Promise<Record<string, unknown>>;
+            };
+            InMemoryFlightRecorder: new () => unknown;
+          };
+          if (typeof rt.createGuardian !== 'function') return [];
+          const storage = (app['context'] as {storage: unknown}).storage;
+          const report = await rt.createGuardian(storage, new rt.InMemoryFlightRecorder()).observe(goalId);
+          const headline = typeof report['headline'] === 'string' ? report['headline'] : '';
+          const efficiency = typeof report['efficiency'] === 'string' ? report['efficiency'] : '';
+          const recs = Array.isArray(report['recommendations'])
+            ? (report['recommendations'] as unknown[]).map(String)
+            : [];
+          return [efficiency ? `${efficiency} — ${headline}` : headline, ...recs].filter(Boolean);
+        } catch {
+          // Absent, or unable to report. Both are silence, and silence here is
+          // honest: the Guardian says nothing rather than the console inventing
+          // a verdict on its behalf.
+          return [];
+        }
+      },
       goals: async limit => {
         const storage = (app['context'] as {storage: Record<string, unknown>}).storage;
-        const rows = await (storage['listGoals'] as (n?: number) => Promise<GoalRow[]>)(limit);
+        const rows = await (storage['listGoals'] as (n?: number) => Promise<GoalRow[]>).call(storage, limit);
         return rows ?? [];
       },
       record: async goalId => {

@@ -210,6 +210,29 @@ export type State = {
    * different facts, and a console that draws one as the other is guessing.
    */
   record: readonly {id: string; goal: string; status: string; at: string}[] | null;
+  /** Which row of History the cursor is on — Enter inspects it. */
+  recordAt: number;
+  /**
+   * One execution, read whole, once the Inspector has been opened on it.
+   *
+   * `null` while it is being assembled. `replay()` reads a set of tables on
+   * demand, so a person sees that it is being read rather than an empty screen
+   * that looks like an empty execution.
+   */
+  inspecting: {
+    goalId: string;
+    status: string;
+    attempts: number | null;
+    durationMs: number | null;
+    workspace: string | null;
+    tasks: readonly string[];
+    evidence: readonly string[];
+    workers: ReadonlyArray<{role: string; status: string; steps: number | null}>;
+    retries: readonly string[];
+    guardian: readonly string[];
+  } | null;
+  /** What the engine can reach for, once Capabilities has been opened. */
+  capabilities: ReadonlyArray<{name: string; category: string}> | null;
 };
 
 export const emptyState = (): State => ({
@@ -232,7 +255,10 @@ export const emptyState = (): State => ({
   languages: [],
   sessionId: '',
   engineFacts: [],
-  record: null
+  record: null,
+  recordAt: 0,
+  inspecting: null,
+  capabilities: null
 });
 
 const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -915,9 +941,47 @@ function placeRows(state: State, width: number): string[] {
     case 'history':
       if (state.record === null) { rows.push(line(say.places.loading, colour.dim)); break; }
       if (state.record.length === 0) { rows.push(line(say.places.nothingYet, colour.dim)); break; }
-      for (const g of state.record)
-        rows.push(line(`${g.at}  ${g.status}  ${g.goal}`,
-          g.status === 'completed' ? colour.muted : g.status === 'failed' ? colour.red : colour.dim));
+      state.record.forEach((g, i) => {
+        const on = i === state.recordAt;
+        rows.push(
+          ' '.repeat(INDENT) +
+            tint(on ? '◆ ' : '  ', colour.cyan) +
+            tint(fit(`${g.at}  ${g.status}  ${g.goal}`, Math.max(8, room - 2)),
+              on ? colour.ink : g.status === 'failed' ? colour.red : colour.muted)
+        );
+      });
+      rows.push(line(say.places.openARow, colour.dim));
+      break;
+
+    case 'inspector': {
+      const r = state.inspecting;
+      if (r === null) { rows.push(line(say.places.loading, colour.dim)); break; }
+      if (r.goalId === '') { rows.push(line(say.places.pickAGoal, colour.dim)); break; }
+      const took = r.durationMs === null ? '—' : `${Math.round(r.durationMs / 1000)}s`;
+      rows.push(line(`${say.record.status}   ${r.status}`, colour.ink));
+      rows.push(line(`${say.record.attempts}   ${r.attempts ?? '—'}   ${say.record.took} ${took}`, colour.muted));
+      if (r.workspace) rows.push(line(`${say.places.workspace}   ${r.workspace}`, colour.muted));
+      if (r.tasks.length > 0) {
+        rows.push(line(say.record.plan, colour.cyanSoft));
+        r.tasks.forEach((t, i) => rows.push(line(`  ${String(i + 1).padStart(2, '0')} ${t}`, colour.muted)));
+      }
+      if (r.evidence.length > 0)
+        rows.push(line(`${say.record.proved}   ${r.evidence.join(' · ')}`, colour.muted));
+      if (r.workers.length > 0)
+        rows.push(line(`${say.record.workers}   ` +
+          r.workers.map(w => `${w.role}:${w.status}${w.steps === null ? '' : `/${w.steps}`}`).join(' · '), colour.muted));
+      for (const t of r.retries) rows.push(line(`${say.record.retries}   ${t}`, colour.muted));
+      for (const g of r.guardian) rows.push(line(`${say.record.guardian}   ${g}`, colour.muted));
+      if (r.tasks.length === 0 && r.evidence.length === 0 && r.workers.length === 0)
+        rows.push(line(say.record.nothing, colour.dim));
+      break;
+    }
+
+    case 'capabilities':
+      if (state.capabilities === null) { rows.push(line(say.places.loading, colour.dim)); break; }
+      if (state.capabilities.length === 0) { rows.push(line(say.places.nothingYet, colour.dim)); break; }
+      for (const c of state.capabilities)
+        rows.push(line(`${c.category}   ${c.name}`, colour.muted));
       break;
   }
   return rows;

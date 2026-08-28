@@ -25,6 +25,11 @@ export const en: Catalogue = {
     rowsBelow: {one: '{n} row below · PgDn', other: '{n} rows below · PgDn'}
   },
   session: 'session',
+  record: {
+    status: 'status', attempts: 'attempts', took: 'took', plan: 'plan',
+    proved: 'proved', workers: 'workers', retries: 'retries',
+    guardian: 'guardian', nothing: 'nothing recorded'
+  },
   keySheet: [
     ['Enter', 'send · or open the chosen place'],
     ['↑ ↓', 'what you typed before · or choose a place'],
@@ -88,6 +93,10 @@ export const en: Catalogue = {
     workspace: 'Workspace', workspaceHint: 'where work lands, and this session',
     engine: 'Engine', engineHint: 'what it was given, and whether it answered',
     history: 'History', historyHint: 'every goal this engine has run',
+    inspector: 'Inspector', inspectorHint: 'one execution, read whole',
+    capabilities: 'Capabilities', capabilitiesHint: 'what the engine can reach for',
+    pickAGoal: 'open History and press Enter on a goal',
+    openARow: '↑↓ move · Enter inspect · Esc back',
     loading: 'reading the record…',
     nothingYet: 'nothing on record yet',
     choose: '↑↓ choose · Enter open · Esc close',

@@ -10,7 +10,7 @@ import type {Catalogue} from '../i18n/catalogue.js';
 // A place's NUMBER is its own, not its position in a filtered list — so it does
 // not move as a query narrows, and the number a person learned stays true.
 
-export type PlaceId = 'keys' | 'mode' | 'policy' | 'language' | 'workspace' | 'engine' | 'history';
+export type PlaceId = 'keys' | 'mode' | 'policy' | 'language' | 'workspace' | 'engine' | 'history' | 'inspector' | 'capabilities';
 
 export type Place = {
   readonly id: PlaceId;
@@ -27,7 +27,9 @@ export const PLACES: readonly Place[] = [
   {id: 'language',  number: 4, name: s => s.places.language,  hint: s => s.places.languageHint},
   {id: 'workspace', number: 5, name: s => s.places.workspace, hint: s => s.places.workspaceHint},
   {id: 'engine',    number: 6, name: s => s.places.engine,    hint: s => s.places.engineHint},
-  {id: 'history',   number: 7, name: s => s.places.history,   hint: s => s.places.historyHint}
+  {id: 'history',   number: 7, name: s => s.places.history,   hint: s => s.places.historyHint},
+  {id: 'inspector', number: 8, name: s => s.places.inspector, hint: s => s.places.inspectorHint},
+  {id: 'capabilities', number: 9, name: s => s.places.capabilities, hint: s => s.places.capabilitiesHint}
 ];
 
 /** The query behind a leading slash, or null when the line is not a command. */

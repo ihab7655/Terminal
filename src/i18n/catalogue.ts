@@ -64,6 +64,18 @@ export type Catalogue = {
   };
 
   readonly session: string;
+  /** The Inspector's own headings, for one execution read whole. */
+  readonly record: {
+    readonly status: string;
+    readonly attempts: string;
+    readonly took: string;
+    readonly plan: string;
+    readonly proved: string;
+    readonly workers: string;
+    readonly retries: string;
+    readonly guardian: string;
+    readonly nothing: string;
+  };
   readonly keySheet: ReadonlyArray<readonly [string, string]>;
   readonly modes: {
     readonly automatic: string;
@@ -120,6 +132,10 @@ export type Catalogue = {
     readonly workspace: string; readonly workspaceHint: string;
     readonly engine: string; readonly engineHint: string;
     readonly history: string; readonly historyHint: string;
+    readonly inspector: string; readonly inspectorHint: string;
+    readonly capabilities: string; readonly capabilitiesHint: string;
+    readonly pickAGoal: string;
+    readonly openARow: string;
     readonly loading: string;
     readonly nothingYet: string;
     readonly choose: string;
