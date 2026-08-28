@@ -272,11 +272,23 @@ export function toItem(event: EngineEvent): Item | undefined {
     case 'capability.evolution': {
       const phase = str(p['phase']);
       const capability = str(p['capability']) ?? '';
-      // `needed` is a conclusion, not work — the engine noticed a defect. Saying
-      // "repairing" here would claim work that is not happening, which is the
-      // defect capability-evolution-notification.ts documents.
+      // `needed` is a CONCLUSION, not work, and not an event in this goal — the
+      // engine has judged a capability unreliable from its whole history. The
+      // earlier wording ("noticed a problem with X") read as something that had
+      // just gone wrong here, and appeared five times at the top of a run in
+      // which nothing went wrong at all.
+      //
+      // LIMIT OF CURRENT ENGINE SURFACE, recorded because it explains what a
+      // person will see: a call this console REFUSES is recorded by the engine
+      // as a failed tool call — ToolCallRecord has no field separating "the
+      // host denied it" from "it broke". Measured 2026-08-28: 7 of 9 write_file
+      // calls in two hours failed, every one of them a refusal by this
+      // console's own policy, and the engine's capability health then judged
+      // write_file unreliable. Nothing here hides that conclusion; it is the
+      // engine's and it is honestly reported. What is fixed is the console
+      // saying WHAT it is.
       const said: Record<string, string> = {
-        needed: `noticed a problem with ${capability}`,
+        needed: `the engine judges ${capability} unreliable — from its record, not from this goal`,
         started: `repairing ${capability}`,
         succeeded: `repaired ${capability}`,
         failed: `could not repair ${capability}`,

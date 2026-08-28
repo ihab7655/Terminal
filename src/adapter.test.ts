@@ -101,8 +101,16 @@ console.log('\ncapability.evolution: `needed` is a conclusion, not work');
 ok('needed does not claim a repair is running',
   (() => {
     const i = toItem(ev('capability.evolution', {phase: 'needed', capability: 'bash'}));
-    return i?.kind === 'noted' && i.lines[0] === 'noticed a problem with bash' &&
-      !i.lines[0].includes('repairing');
+    return i?.kind === 'noted' && !i.lines[0]!.includes('repairing');
+  })());
+ok('and says it is a standing judgement, not something that happened in this goal',
+  (() => {
+    const i = toItem(ev('capability.evolution', {phase: 'needed', capability: 'bash'}));
+    // It read "noticed a problem with bash", which appeared five times atop a
+    // run in which nothing went wrong — the engine's conclusion comes from its
+    // whole record, and a console that dates it to the current goal is
+    // reporting a different fact from the one it was given.
+    return i?.kind === 'noted' && i.lines[0]!.includes('from its record, not from this goal');
   })());
 ok('started does claim it',
   (() => {
