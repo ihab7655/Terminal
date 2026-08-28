@@ -93,6 +93,8 @@ export type Catalogue = {
     readonly plan: string;
     readonly separate: string;
     readonly forbiddenHolds: string;
+    readonly inUse: string;
+    readonly enterCycles: string;
   };
 
   /** What the engine is doing, said as one line that replaces the last. */

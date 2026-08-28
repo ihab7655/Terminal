@@ -55,7 +55,9 @@ export const en: Catalogue = {
     approval: 'it stops where the policy says to stop',
     plan: 'it shows the plan. No tool is called.',
     separate: 'what it may do is a separate table, and this does not touch it',
-    forbiddenHolds: 'forbidden holds in every mode'
+    forbiddenHolds: 'forbidden holds in every mode',
+    inUse: 'in use',
+    enterCycles: '↑↓ move · Enter changes it · allowed → needs approval → forbidden'
   },
 
   steer: {

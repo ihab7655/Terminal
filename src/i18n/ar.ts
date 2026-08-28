@@ -80,7 +80,9 @@ export const ar: Catalogue = {
     approval: 'يتوقّف حيث تقول السياسة',
     plan: 'يعرض الخطّة. لا تُستدعى أداة.',
     separate: 'ما المسموح له جدول منفصل، وهذا لا يمسّه',
-    forbiddenHolds: 'الممنوع ممنوع في كل الأوضاع'
+    forbiddenHolds: 'الممنوع ممنوع في كل الأوضاع',
+    inUse: 'المستعمل',
+    enterCycles: '↑↓ تحرّك · Enter يغيّرها · مسموح ← يحتاج موافقة ← ممنوع'
   },
 
   steer: {

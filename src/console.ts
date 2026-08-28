@@ -192,9 +192,27 @@ export function frame(state: State): {rows: string[]; view: Viewport} {
   //
   // It replaces rows rather than reserving any: the frame is the same height,
   // and what it covers is scrolled past, never dropped.
-  const over = state.place ? placeRows(state, width) : launcherUp(state) ? launcherRows(state, width) : [];
-  for (let i = 0; i < over.length && i < body.length; i++)
-    body[body.length - over.length + i] = over[i]!;
+  // AND IT SCROLLS, because rule 3 holds inside an overlay too. A list of
+  // places is longer than a short window, and the first version wrote its rows
+  // at `body.length - over.length` — NEGATIVE when the list was taller than the
+  // space, so rows past the fold were silently dropped and the places below
+  // them could not be reached at all. Measured: 9 of 12 at height 16, 1 of 12
+  // at height 12.
+  //
+  // The window is taken by `windowOnto`, the same function the transcript uses,
+  // anchored so the row under the cursor is always inside it. Nothing is shed;
+  // what does not fit is scrolled past and said.
+  const over = state.place ? placeRows(state, width) : launcherUp(state) ? launcherRows(state, width) : null;
+  if (over !== null) {
+    const room = Math.min(body.length, over.rows.length);
+    // Follow the cursor: keep it in view, and prefer showing what is after it.
+    const first = Math.max(0, Math.min(over.rows.length - room, over.cursor - room + 2));
+    const shown = windowOnto(over.rows, {offset: first, following: false}, room);
+    const out = [...shown.rows];
+    if (shown.above > 0) out[0] = row(width, tint(`  ↑ ${shown.above} above`, colour.dim));
+    if (shown.below > 0) out[out.length - 1] = row(width, tint(`  ↓ ${shown.below} below`, colour.dim));
+    for (let i = 0; i < out.length; i++) body[body.length - out.length + i] = out[i]!;
+  }
 
   const [composer, keys] = footerRows(state, width, below);
   // A plain line between the transcript and the composer, as the prototype
@@ -262,10 +280,20 @@ function status(state: State): string {
  */
 const row = (width: number, ...pieces: string[]): string => fitStyled(pieces.join(''), width);
 
-function placeRows(state: State, width: number): string[] {
+/** Which row of an open place a person is on — 0 when it has no list. */
+const cursorOf = (state: State): number => {
+  if (state.place === 'mode' || state.place === 'policy' || state.place === 'language')
+    return state.at + 1;
+  if (state.place === 'history') return state.recordAt + 1;
+  if (state.place === 'conversations') return state.conversationAt + 1;
+  if (state.place === 'profiles') return PROFILES.findIndex(p => p.id === state.profile) + 1;
+  return 0;
+};
+
+function placeRows(state: State, width: number): {rows: string[]; cursor: number} {
   const say = catalogueFor(state.language);
   const place = PLACES.find(p => p.id === state.place);
-  if (!place) return [];
+  if (!place) return {rows: [], cursor: 0};
   const room = Math.max(8, width - INDENT - 2);
   const line = (text: string, c: string = colour.muted) =>
     row(width, ' '.repeat(INDENT), tint(text, c));
@@ -276,20 +304,36 @@ function placeRows(state: State, width: number): string[] {
       for (const [k, what] of say.keySheet) rows.push(line(`${k}   ${what}`, colour.muted));
       break;
     case 'mode':
-      for (const m of ['automatic', 'approval', 'plan'] as const)
-        rows.push(line(`${m === state.mode ? glyph.chosen : glyph.other} ${m}   ${say.modes[m]}`,
-          m === state.mode ? colour.ink : colour.muted));
+      (['automatic', 'approval', 'plan'] as const).forEach((m, i) => {
+        const on = i === state.at;
+        rows.push(row(width, ' '.repeat(INDENT),
+          tint(on ? glyph.chosen : glyph.other, on ? colour.cyan : colour.dim),
+          tint(` ${m}`, m === state.mode ? colour.ink : colour.muted),
+          tint(m === state.mode ? ` · ${say.modes.inUse}` : '', colour.cyanSoft),
+          tint(`   ${say.modes[m]}`, colour.muted)));
+      });
       rows.push(line(say.modes.separate, colour.dim));
       break;
     case 'policy':
-      for (const [id, value] of state.policy)
-        rows.push(line(`${id}   ${value}`, value === 'forbidden' ? colour.red : colour.muted));
+      state.policy.forEach(([id, value], i) => {
+        const on = i === state.at;
+        rows.push(row(width, ' '.repeat(INDENT),
+          tint(on ? glyph.chosen : ' ', colour.cyan),
+          tint(` ${id}   `, on ? colour.ink : colour.muted),
+          tint(value, value === 'forbidden' ? colour.red
+            : value === 'needs-approval' ? colour.amber : colour.muted)));
+      });
+      rows.push(line(say.modes.enterCycles, colour.dim));
       rows.push(line(say.modes.forbiddenHolds, colour.dim));
       break;
     case 'language':
-      for (const [id, name] of state.languages)
-        rows.push(line(`${id === state.language ? glyph.chosen : glyph.other} ${name}`,
-          id === state.language ? colour.ink : colour.muted));
+      state.languages.forEach(([id, name], i) => {
+        const on = i === state.at;
+        rows.push(row(width, ' '.repeat(INDENT),
+          tint(on ? glyph.chosen : glyph.other, on ? colour.cyan : colour.dim),
+          tint(` ${name}`, id === state.language ? colour.ink : colour.muted),
+          tint(id === state.language ? ` · ${say.modes.inUse}` : '', colour.cyanSoft)));
+      });
       break;
     case 'workspace':
       rows.push(line(`${say.places.workspace}   ${state.workspace}`, colour.muted));
@@ -384,11 +428,13 @@ function placeRows(state: State, width: number): string[] {
         rows.push(line(`${c.category}   ${c.name}`, colour.muted));
       break;
   }
-  return rows;
+  // The row that must stay in view. A place with no cursor anchors at its
+  // top; one with a list follows the row a person is on.
+  return {rows, cursor: cursorOf(state)};
 }
 
 /** The launcher: one row per place, under a rail of its own. */
-function launcherRows(state: State, width: number): string[] {
+function launcherRows(state: State, width: number): {rows: string[]; cursor: number} {
   const say = catalogueFor(state.language);
   const list = offered(state);
   const here = chosen(state);
@@ -409,9 +455,9 @@ function launcherRows(state: State, width: number): string[] {
       tint('  ' + place.hint(say), colour.dim)
     ));
   }
-  return rows;
+  // The rail is row zero, so the chosen place sits one below it.
+  return {rows, cursor: state.launcher.at + 1};
 }
-
 /**
  * The places a query means, and the one chosen.
  *

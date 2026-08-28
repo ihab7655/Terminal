@@ -277,6 +277,22 @@ function key(k: Key) {
     // History is the one place with rows to walk: Enter on a goal opens the
     // Inspector on it. Everywhere else these keys do nothing rather than
     // something arbitrary.
+    // ── THE THREE PLACES THAT CHANGE SOMETHING ───────────────────────────
+    //
+    // A place that lists things a person can pick has to let them pick. These
+    // three showed their lists and did nothing with a keypress — the gap
+    // between a screen that RENDERS and one that WORKS, found by pressing
+    // Enter in each rather than by looking at them.
+    if (state.place === 'mode' || state.place === 'policy' || state.place === 'language') {
+      const rows =
+        state.place === 'mode' ? 3
+        : state.place === 'policy' ? state.policy.length
+        : state.languages.length;
+      if (k.name === 'up') { edit(s => ({...s, at: Math.max(0, s.at - 1)})); return; }
+      if (k.name === 'down') { edit(s => ({...s, at: Math.min(rows - 1, s.at + 1)})); return; }
+      if (k.name === 'enter') { choose(); return; }
+    }
+
     // ── CHOOSING A WAY OF WORKING ────────────────────────────────────────
     //
     // A profile that widens what may happen is confirmed by TYPING its name.
@@ -370,6 +386,11 @@ function key(k: Key) {
         // History is READ when it is opened, never held live: the event stream
         // is live-only and does not survive the process, so what happened
         // before comes from the engine's store or from nowhere.
+        if (place.id === 'mode')
+          edit(s => ({...s, at: ['automatic', 'approval', 'plan'].indexOf(s.mode)}));
+        if (place.id === 'language')
+          edit(s => ({...s, at: Math.max(0, s.languages.findIndex(([id]) => id === s.language))}));
+        if (place.id === 'policy') edit(s => ({...s, at: 0}));
         if (place.id === 'settings' && engine) {
           try { edit(s => ({...s, configuration: engine!.configuration()})); }
           catch (err) {
@@ -653,6 +674,55 @@ function inspect(goalId: string): void {
  * them wins and stays. `adjusted` then says the profile's name is no longer the
  * whole story, which is honesty rather than a warning.
  */
+/**
+ * Act on the row the cursor is on, in whichever of the three places is open.
+ *
+ * Each writes the setting, saves it, and shows the result immediately — the
+ * mode reaches the middleware through the live state it closes over, so it
+ * takes effect on the very next hook call with no restart.
+ */
+function choose(): void {
+  const MODES = ['automatic', 'approval', 'plan'] as const;
+  const VALUES = ['allowed', 'needs-approval', 'forbidden'] as const;
+
+  if (state.place === 'mode') {
+    const mode = MODES[state.at] ?? 'automatic';
+    settings = {...settings, mode};
+    const trouble = save(settings);
+    edit(s => ({...s, mode, adjusted: adjusted(profileFor(s.profile), mode, settings.policy, settings.theme)}));
+    if (trouble) add({kind: 'noted', id: `noted-${Date.now()}`, lines: [trouble]});
+    return;
+  }
+
+  if (state.place === 'language') {
+    const id = state.languages[state.at]?.[0];
+    if (id === undefined) return;
+    settings = {...settings, language: id};
+    const trouble = save(settings);
+    // Every row is built from structured state on every frame, so the whole
+    // screen is in the new language at the next repaint — nothing rebuilt.
+    edit(s => ({...s, language: id}));
+    if (trouble) add({kind: 'noted', id: `noted-${Date.now()}`, lines: [trouble]});
+    return;
+  }
+
+  // A policy row cycles: allowed → needs approval → forbidden → allowed. One
+  // key, three states, and the row says which it is on.
+  const entry = state.policy[state.at];
+  if (!entry) return;
+  const [id, current] = entry;
+  const next = VALUES[(VALUES.indexOf(current as typeof VALUES[number]) + 1) % VALUES.length]!;
+  const policy = {...settings.policy, [id]: next};
+  settings = {...settings, policy};
+  const trouble = save(settings);
+  edit(s => ({
+    ...s,
+    policy: Object.entries(policy),
+    adjusted: adjusted(profileFor(s.profile), settings.mode, policy, settings.theme)
+  }));
+  if (trouble) add({kind: 'noted', id: `noted-${Date.now()}`, lines: [trouble]});
+}
+
 function putOn(id: string): void {
   const p = profileFor(id);
   const next = apply(p);

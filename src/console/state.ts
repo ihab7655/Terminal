@@ -104,6 +104,11 @@ export type State = {
   /** Which row of History the cursor is on — Enter inspects it. */
   recordAt: number;
   /**
+   * Which row the cursor is on in a place whose list is its own — the mode, a
+   * policy row, a language. One number, because only one place is ever open.
+   */
+  at: number;
+  /**
    * One execution, read whole, once the Inspector has been opened on it.
    *
    * `null` while it is being assembled. `replay()` reads a set of tables on
@@ -164,6 +169,7 @@ export const emptyState = (): State => ({
   engineFacts: [],
   record: null,
   recordAt: 0,
+  at: 0,
   inspecting: null,
   capabilities: null,
   configuration: null,
