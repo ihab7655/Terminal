@@ -2,7 +2,7 @@
 //
 // A title set into the line itself, a status at the far end, and no side walls:
 //
-//   ╭── DRAGON / console ───────────────────────── engine online ─╮
+//   ╭── OVERYOS / operating console ─────────────── engine online ─╮
 //
 // Taken from the prototype this console's design comes from
 // (github.com/ihab7655/trakdem, src/theme/Rail.tsx), where it is the one piece

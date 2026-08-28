@@ -638,7 +638,7 @@ export function frame(state: State): {rows: string[]; view: Viewport} {
 
 /** What this console is, said once, at the top. */
 const identity = (state: State): string =>
-  state.items.length === 0 ? 'DRAGON / console' : 'DRAGON / operating console';
+  state.items.length === 0 ? 'OVERYOS' : 'OVERYOS / operating console';
 
 /**
  * What it is doing, at the far end of the same line.

@@ -15,8 +15,8 @@ const cols = (s: string) => [...plain(s)].length;
 
 console.log('\nexactly the width it was given');
 for (const w of [24, 40, 60, 92, 120]) {
-  ok(`at ${w} columns`, cols(rail(w, 'top', 'DRAGON / console', 'engine online')) === w,
-    cols(rail(w, 'top', 'DRAGON / console', 'engine online')));
+  ok(`at ${w} columns`, cols(rail(w, 'top', 'OVERYOS', 'engine online')) === w,
+    cols(rail(w, 'top', 'OVERYOS', 'engine online')));
 }
 ok('a long title cannot push it past the frame',
   cols(rail(30, 'top', 'a title far longer than this rail can possibly hold', 'busy')) === 30);
@@ -24,8 +24,8 @@ ok('zero width draws nothing', rail(0, 'top', 'x') === '');
 
 console.log('\nwhat gives way, in order');
 ok('the status goes first, and goes whole \u2014 half a status says nothing',
-  !plain(rail(34, 'top', 'DRAGON / operating console', 'engine online')).includes('engi'),
-  plain(rail(34, 'top', 'DRAGON / operating console', 'engine online')));
+  !plain(rail(34, 'top', 'OVERYOS / operating console', 'engine online')).includes('engi'),
+  plain(rail(34, 'top', 'OVERYOS / operating console', 'engine online')));
 ok('the title is cut last, and says it was cut',
   plain(rail(28, 'top', 'a title longer than the room', '')).includes('\u2026'),
   plain(rail(28, 'top', 'a title longer than the room', '')));

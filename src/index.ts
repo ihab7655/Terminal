@@ -95,11 +95,42 @@ function edit(change: (s: State) => State) {
 // person skipping an animation presses a key, not a combination.
 const isRealKey = (k: Key) => !k.ctrl && (k.name !== '' || [...k.text].some(c => c >= ' '));
 
+// ── Leaving ─────────────────────────────────────────────────────────────────
+//
+// The engine must be told, or a goal in flight is never recorded as ended.
+// `ApplicationRuntime.shutdown()` marks every in-flight goal `interrupted`
+// through the same boundary as any other ending, marks its workers, then
+// DRAINS the persistence queue and closes the pool. Skipping it leaves the
+// goals table asserting that a dead run is still `running` — observed: two
+// console goals from 2026-08-25 still say `running`/`planning` today, both
+// from a session that ended on Ctrl+C.
+//
+// It was declared on `Engine`, implemented in the door, and had no caller.
+//
+// The screen is given back FIRST: shutdown drains a database and can take a
+// moment, and a person who pressed Ctrl+C should get their terminal back at
+// once rather than watch a frozen frame. Bounded, because quitting must never
+// be something a person cannot do — if the drain hangs, the process still
+// leaves, and the rows it would have corrected stay as they are.
+const LEAVE_BUDGET_MS = 3000;
+
+async function leave(): Promise<never> {
+  stop();
+  releaseScreen();
+  const engineToClose = engine;
+  if (engineToClose) {
+    await Promise.race([
+      engineToClose.shutdown().catch(() => undefined),
+      new Promise(resolve => setTimeout(resolve, LEAVE_BUDGET_MS))
+    ]);
+  }
+  process.exit(0);
+}
+
 function key(k: Key) {
   if (k.ctrl && k.text === 'c') {
-    stop();
-    releaseScreen();
-    process.exit(0);
+    void leave();
+    return;
   }
 
   // Any key during the opening ends it, and does nothing else — the keystroke

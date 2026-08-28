@@ -48,7 +48,7 @@ const END = EXIT_FROM + EXIT_TICKS;
 export const advance = (o: Opening): Opening =>
   o.done ? o : {tick: o.tick + 1, done: o.tick + 1 >= END};
 
-const NAME = 'DRAGON';
+const NAME = 'OVERYOS';
 const GREETING = [...'WELCOME TO'].join(' ');
 const TAGLINE = 'the AI operating engine';
 const HINT = 'press any key';
