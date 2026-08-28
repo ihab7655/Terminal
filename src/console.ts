@@ -25,6 +25,7 @@ export type {Change, Item, ItemState} from './console/items.js';
 import {catalogueFor, DEFAULT_LANGUAGE, type Catalogue} from './i18n/index.js';
 import type {Mode} from './settings/store.js';
 import {matching, PLACES, queryOf, type Place, type PlaceId} from './places/registry.js';
+import {HANG, PAD, choice, field, gap, heading, note, paragraph, row, subtitle} from './console/surface.js';
 import {profiles as PROFILES} from './theme/profiles.js';
 
 // The console: content in, one frame out.
@@ -207,8 +208,14 @@ export function frame(state: State): {rows: string[]; view: Viewport} {
   // reading. Everything else sits over the bottom rows.
   const page = PLACES.find(p => p.id === state.place && p.full);
   if (page) {
-    const content = helpPage(state, width);
-    const shown = windowOnto(content, {offset: state.pageAt, following: false}, bodyRows);
+    const content = page.id === 'help' ? helpPage(state, width) : placeRows(state, width).rows;
+    // A surface with a cursor follows it; a page a person is reading holds the
+    // offset they scrolled to. Both are the same window onto the same rows.
+    const cursor = page.id === 'help' ? -1 : placeRows(state, width).cursor;
+    const offset = cursor < 0
+      ? state.pageAt
+      : Math.max(0, Math.min(Math.max(0, content.length - bodyRows), cursor - bodyRows + 2));
+    const shown = windowOnto(content, {offset, following: false}, bodyRows);
     const out = [...shown.rows];
     while (out.length < bodyRows) out.push('');
     if (shown.above > 0) out[0] = row(width, tint(`  ↑ ${shown.above} above`, colour.dim));
@@ -281,18 +288,6 @@ function status(state: State): string {
  * nothing here computes a fact of its own, and nothing claims a state it
  * cannot point at.
  */
-/**
- * A row of a place or an overlay, cut at the real width.
- *
- * Every one of these is a line of coloured pieces, and the mistake this closes
- * was fitting the PIECES: a row assembled from three fitted fragments is not a
- * fitted row, and four of them overflowed a narrow window — found by rendering
- * every state at every width from 20 to 140 rather than by looking.
- *
- * `fitStyled` measures visible columns and ignores the escape codes, so the row
- * is cut where the screen ends and nothing here counts anything.
- */
-const row = (width: number, ...pieces: string[]): string => fitStyled(pieces.join(''), width);
 
 /** Which row of an open place a person is on — 0 when it has no list. */
 const cursorOf = (state: State): number => {
@@ -308,143 +303,157 @@ function placeRows(state: State, width: number): {rows: string[]; cursor: number
   const say = catalogueFor(state.language);
   const place = PLACES.find(p => p.id === state.place);
   if (!place) return {rows: [], cursor: 0};
-  const room = Math.max(8, width - INDENT - 2);
-  const line = (text: string, c: string = colour.muted) =>
-    row(width, ' '.repeat(INDENT), tint(text, c));
-  const rows = [rail(width, 'section', place.name(say), place.hint(say))];
+
+  // Every surface opens by naming itself and saying what it is for. After that
+  // each is laid out for WHAT IT IS: a list you choose from, a table of facts
+  // you read, or a record you study. They share a vocabulary, not a template.
+  const rows: string[] = [heading(width, place.name(say)), subtitle(width, place.hint(say)), gap()];
 
   switch (place.id) {
-    case 'help':
-      // Drawn by helpPage() — a full page, not a row list.
-      break;
+    // ── LISTS YOU CHOOSE FROM ──────────────────────────────────────────────
     case 'mode':
-      (['automatic', 'approval', 'plan'] as const).forEach((m, i) => {
-        const on = i === state.at;
-        rows.push(row(width, ' '.repeat(INDENT),
-          tint(on ? glyph.chosen : glyph.other, on ? colour.cyan : colour.dim),
-          tint(` ${m}`, m === state.mode ? colour.ink : colour.muted),
-          tint(m === state.mode ? ` · ${say.modes.inUse}` : '', colour.cyanSoft),
-          tint(`   ${say.modes[m]}`, colour.muted)));
-      });
-      rows.push(line(say.modes.separate, colour.dim));
+      (['automatic', 'approval', 'plan'] as const).forEach((m, i) =>
+        rows.push(choice(width, i === state.at, m, say.modes[m], m === state.mode)));
+      rows.push(gap(), note(width, say.modes.separate));
       break;
-    case 'policy':
-      state.policy.forEach(([id, value], i) => {
-        const on = i === state.at;
-        rows.push(row(width, ' '.repeat(INDENT),
-          tint(on ? glyph.chosen : ' ', colour.cyan),
-          tint(` ${id}   `, on ? colour.ink : colour.muted),
-          tint(value, value === 'forbidden' ? colour.red
-            : value === 'needs-approval' ? colour.amber : colour.muted)));
-      });
-      rows.push(line(say.modes.enterCycles, colour.dim));
-      rows.push(line(say.modes.forbiddenHolds, colour.dim));
-      break;
+
     case 'language':
-      state.languages.forEach(([id, name], i) => {
-        const on = i === state.at;
-        rows.push(row(width, ' '.repeat(INDENT),
-          tint(on ? glyph.chosen : glyph.other, on ? colour.cyan : colour.dim),
-          tint(` ${name}`, id === state.language ? colour.ink : colour.muted),
-          tint(id === state.language ? ` · ${say.modes.inUse}` : '', colour.cyanSoft)));
-      });
+      state.languages.forEach(([id, name], i) =>
+        rows.push(choice(width, i === state.at, name, '', id === state.language)));
       break;
+
+    case 'profiles':
+      if (state.confirming !== null) {
+        rows.push(...paragraph(width, say.profile.confirmHead), gap());
+        rows.push(...paragraph(width, say.profile.confirmBody), gap());
+        rows.push(...paragraph(width, say.profile.confirmDoesNot), gap());
+        rows.push(field(width, say.profile.confirmType, state.confirming, 'state'));
+        rows.push(note(width, say.profile.cancel));
+        break;
+      }
+      PROFILES.forEach((p, i) =>
+        rows.push(choice(width, i === state.at, p.id, p.mode,
+          p.id === state.profile && !state.adjusted)));
+      rows.push(gap(), note(width, say.profile.appliesAll));
+      if (state.adjusted) rows.push(field(width, state.profile, say.profile.adjusted, 'state'));
+      break;
+
+    // ── A TABLE OF SETTINGS, EACH ONE CHANGEABLE ───────────────────────────
+    case 'policy':
+      state.policy.forEach(([id, value], i) =>
+        rows.push(row(width, PAD,
+          tint(i === state.at ? glyph.chosen : ' ', colour.cyan), ' ',
+          tint(id.padEnd(16), i === state.at ? colour.ink : colour.muted), '  ',
+          tint(value, value === 'forbidden' ? colour.red
+            : value === 'needs-approval' ? colour.amber : colour.cyanSoft))));
+      rows.push(gap(), note(width, say.modes.enterCycles), note(width, say.modes.forbiddenHolds));
+      break;
+
+    // ── FACTS YOU READ ─────────────────────────────────────────────────────
     case 'workspace':
-      rows.push(line(`${say.places.workspace}   ${state.workspace}`, colour.muted));
-      rows.push(line(`${say.session}   ${state.sessionId}`, colour.muted));
+      rows.push(field(width, say.places.workspace, state.workspace));
+      rows.push(field(width, say.session, state.sessionId));
       break;
+
     case 'engine':
-      for (const l of state.engineFacts) rows.push(line(l, colour.muted));
+      for (const line of state.engineFacts) {
+        const [label, ...rest] = line.split(' · ');
+        rows.push(rest.length > 0
+          ? field(width, label!, rest.join(' · '))
+          : row(width, PAD, tint(line, colour.ink)));
+      }
       break;
+
+    case 'settings':
+      if (state.configuration === null) { rows.push(note(width, say.places.loading)); break; }
+      for (const [k, v] of state.configuration)
+        rows.push(field(width, k, v, k === 'api key' ? 'state' : 'plain'));
+      break;
+
+    case 'capabilities': {
+      if (state.capabilities === null) { rows.push(note(width, say.places.loading)); break; }
+      if (state.capabilities.length === 0) { rows.push(note(width, say.places.nothingYet)); break; }
+      // Grouped by the category the ENGINE declares, so the shape of the list
+      // is the engine's own and not one this console invented.
+      let last = '';
+      for (const c of state.capabilities) {
+        if (c.category !== last) { rows.push(gap(), heading(width, c.category)); last = c.category; }
+        rows.push(row(width, HANG, tint(c.name, colour.ink)));
+      }
+      break;
+    }
+
+    // ── RECORDS YOU STUDY ──────────────────────────────────────────────────
     case 'history':
-      if (state.record === null) { rows.push(line(say.places.loading, colour.dim)); break; }
-      if (state.record.length === 0) { rows.push(line(say.places.nothingYet, colour.dim)); break; }
-      state.record.forEach((g, i) => {
-        const on = i === state.recordAt;
-        rows.push(row(width,
-          ' '.repeat(INDENT),
-          tint(on ? glyph.chosen + ' ' : '  ', colour.cyan),
-          tint(`${g.at}  ${g.status}  ${g.goal}`, on ? colour.ink : g.status === 'failed' ? colour.red : colour.muted)
-        ));
-      });
-      rows.push(line(say.places.openARow, colour.dim));
+      if (state.record === null) { rows.push(note(width, say.places.loading)); break; }
+      if (state.record.length === 0) { rows.push(note(width, say.places.nothingYet)); break; }
+      state.record.forEach((g, i) =>
+        rows.push(row(width, PAD,
+          tint(i === state.recordAt ? glyph.chosen : ' ', colour.cyan), ' ',
+          tint(g.at, colour.dim), '  ',
+          tint(g.status.padEnd(12),
+            g.status === 'completed' ? colour.cyanSoft
+              : g.status === 'failed' ? colour.red : colour.amber), '  ',
+          tint(g.goal, i === state.recordAt ? colour.ink : colour.muted))));
+      rows.push(gap(), note(width, say.places.openARow));
+      break;
+
+    case 'conversations':
+      if (state.conversations === null) { rows.push(note(width, say.places.loading)); break; }
+      if (state.conversations.length === 0) { rows.push(note(width, say.places.nothingYet)); break; }
+      state.conversations.forEach((c, i) =>
+        rows.push(row(width, PAD,
+          tint(i === state.conversationAt ? glyph.chosen : ' ', colour.cyan), ' ',
+          tint(c.at, colour.dim), '  ',
+          tint(String(c.goals).padStart(3), colour.amber), '  ',
+          tint(c.last, i === state.conversationAt ? colour.ink : colour.muted),
+          c.id === state.sessionId ? tint('  ·  ' + say.places.thisSession, colour.cyanSoft) : '')));
+      rows.push(gap(), note(width, say.places.resume));
       break;
 
     case 'inspector': {
       const r = state.inspecting;
-      if (r === null) { rows.push(line(say.places.loading, colour.dim)); break; }
-      if (r.goalId === '') { rows.push(line(say.places.pickAGoal, colour.dim)); break; }
-      const took = r.durationMs === null ? '—' : `${Math.round(r.durationMs / 1000)}s`;
-      rows.push(line(`${say.record.status}   ${r.status}`, colour.ink));
-      rows.push(line(`${say.record.attempts}   ${r.attempts ?? '—'}   ${say.record.took} ${took}`, colour.muted));
-      if (r.workspace) rows.push(line(`${say.places.workspace}   ${r.workspace}`, colour.muted));
+      if (r === null) { rows.push(note(width, say.places.loading)); break; }
+      if (r.goalId === '') { rows.push(note(width, say.places.pickAGoal)); break; }
+      rows.push(field(width, say.record.status, r.status,
+        r.status === 'completed' ? 'plain' : r.status === 'failed' ? 'bad' : 'state'));
+      rows.push(field(width, say.record.attempts, String(r.attempts ?? '—')));
+      rows.push(field(width, say.record.took,
+        r.durationMs === null ? '—' : `${Math.round(r.durationMs / 1000)}s`));
+      if (r.workspace) rows.push(field(width, say.places.workspace, r.workspace));
       if (r.tasks.length > 0) {
-        rows.push(line(say.record.plan, colour.cyanSoft));
-        r.tasks.forEach((t, i) => rows.push(line(`  ${String(i + 1).padStart(2, '0')} ${t}`, colour.muted)));
+        rows.push(gap(), heading(width, say.record.plan));
+        r.tasks.forEach((t, i) =>
+          rows.push(row(width, HANG, tint(String(i + 1).padStart(2, '0') + '  ', colour.dim), tint(t, colour.ink))));
       }
-      if (r.evidence.length > 0)
-        rows.push(line(`${say.record.proved}   ${r.evidence.join(' · ')}`, colour.muted));
-      if (r.workers.length > 0)
-        rows.push(line(`${say.record.workers}   ` +
-          r.workers.map(w => `${w.role}:${w.status}${w.steps === null ? '' : `/${w.steps}`}`).join(' · '), colour.muted));
-      for (const t of r.retries) rows.push(line(`${say.record.retries}   ${t}`, colour.muted));
-      for (const g of r.guardian) rows.push(line(`${say.record.guardian}   ${g}`, colour.muted));
-      if (r.tasks.length === 0 && r.evidence.length === 0 && r.workers.length === 0)
-        rows.push(line(say.record.nothing, colour.dim));
+      if (r.evidence.length > 0) {
+        rows.push(gap(), heading(width, say.record.proved));
+        for (const e of r.evidence) rows.push(row(width, HANG, tint(e, colour.cyanSoft)));
+      }
+      if (r.workers.length > 0) {
+        rows.push(gap(), heading(width, say.record.workers));
+        for (const w of r.workers)
+          rows.push(row(width, HANG, tint(w.role, colour.ink),
+            tint(`  ${w.status}${w.steps === null ? '' : ` · ${w.steps}`}`, colour.muted)));
+      }
+      if (r.retries.length > 0) {
+        rows.push(gap(), heading(width, say.record.retries));
+        for (const t of r.retries) rows.push(...paragraph(width, t, HANG));
+      }
+      if (r.guardian.length > 0) {
+        rows.push(gap(), heading(width, say.record.guardian));
+        for (const g of r.guardian) rows.push(...paragraph(width, g, HANG));
+      }
       break;
     }
 
-    case 'profiles': {
-      if (state.confirming !== null) {
-        rows.push(line(say.profile.confirmHead, colour.ink));
-        rows.push(line(say.profile.confirmBody, colour.muted));
-        rows.push(line(say.profile.confirmDoesNot, colour.dim));
-        rows.push(line(`${say.profile.confirmType}: ${state.confirming}`, colour.amber));
-        rows.push(line(say.profile.cancel, colour.dim));
-        break;
-      }
-      for (const p of PROFILES) {
-        const on = p.id === state.profile;
-        rows.push(line(
-          `${on ? glyph.chosen : glyph.other} ${p.id}   ${p.mode}` +
-            (on && state.adjusted ? ` · ${say.profile.adjusted}` : ''),
-          on ? colour.ink : colour.muted));
-      }
-      rows.push(line(say.profile.appliesAll, colour.dim));
-      break;
-    }
-
-    case 'settings':
-      if (state.configuration === null) { rows.push(line(say.places.loading, colour.dim)); break; }
-      for (const [k, v] of state.configuration) rows.push(line(`${k}   ${v}`, colour.muted));
-      break;
-
-    case 'conversations': {
-      if (state.conversations === null) { rows.push(line(say.places.loading, colour.dim)); break; }
-      if (state.conversations.length === 0) { rows.push(line(say.places.nothingYet, colour.dim)); break; }
-      state.conversations.forEach((c, i) => {
-        const on = i === state.conversationAt;
-        const mine = c.id === state.sessionId ? ` · ${say.places.thisSession}` : '';
-        rows.push(row(width,
-          ' '.repeat(INDENT),
-          tint(on ? glyph.chosen + ' ' : '  ', colour.cyan),
-          tint(`${c.at}  ${c.goals}  ${c.last}${mine}`, on ? colour.ink : colour.muted)
-        ));
-      });
-      rows.push(line(say.places.resume, colour.dim));
-      break;
-    }
-
-    case 'capabilities':
-      if (state.capabilities === null) { rows.push(line(say.places.loading, colour.dim)); break; }
-      if (state.capabilities.length === 0) { rows.push(line(say.places.nothingYet, colour.dim)); break; }
-      for (const c of state.capabilities)
-        rows.push(line(`${c.category}   ${c.name}`, colour.muted));
+    case 'help':
+      // Drawn by helpPage() — a full page, not a row list.
       break;
   }
-  // The row that must stay in view. A place with no cursor anchors at its
-  // top; one with a list follows the row a person is on.
-  return {rows, cursor: cursorOf(state)};
+  // The row that must stay in view. A place with no list anchors at its top;
+  // one with a list follows the row a person is on.
+  return {rows, cursor: cursorOf(state) + 2};
 }
 
 /**
@@ -524,6 +533,39 @@ export const chosen = (state: State): Place | undefined => {
   const list = offered(state);
   return list[Math.min(Math.max(0, state.launcher.at), Math.max(0, list.length - 1))];
 };
+
+/**
+ * Which row of an open surface a screen row is — or undefined.
+ *
+ * The same walk that DRAWS decides it, so a click can never land one row off
+ * the thing it pointed at. That drift is not hypothetical: it happened once in
+ * the transcript, when a second pass re-derived the same skipping rules and
+ * then disagreed with the first.
+ */
+export function surfaceRowAt(state: State, screenRow: number): number | undefined {
+  const {columns, rows: height} = screenSize();
+  const width = Math.max(20, columns);
+  const {bodyRows} = layout(height);
+  const page = PLACES.find(p => p.id === state.place && p.full);
+  const built = page
+    ? (page.id === 'help'
+        ? {rows: helpPage(state, width), cursor: -1}
+        : placeRows(state, width))
+    : launcherUp(state)
+      ? launcherRows(state, width)
+      : null;
+  if (built === null) return undefined;
+
+  // Where the surface starts on screen, and where its window starts in the
+  // content — the same two numbers the frame uses to draw it.
+  const room = page ? bodyRows : Math.min(bodyRows, built.rows.length);
+  const top = RAIL_ROWS + (page ? 0 : bodyRows - room);
+  const first = built.cursor < 0
+    ? Math.max(0, Math.min(Math.max(0, built.rows.length - room), state.pageAt))
+    : Math.max(0, Math.min(Math.max(0, built.rows.length - room), built.cursor - room + 2));
+  const index = first + (screenRow - top);
+  return index >= 0 && index < built.rows.length ? index : undefined;
+}
 
 /** Is the launcher showing — raised by a key, or by a line that starts with `/`? */
 export const launcherUp = (state: State): boolean =>

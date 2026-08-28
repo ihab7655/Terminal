@@ -13,8 +13,8 @@ import {
   type State
 } from './console.js';
 import {isFailure, openEngine, type Engine} from './engine.js';
-import {chosen, launcherUp, offered} from './console.js';
-import {queryOf} from './places/registry.js';
+import {chosen, launcherUp, offered, surfaceRowAt} from './console.js';
+import {PLACES, queryOf} from './places/registry.js';
 import {route, type Where} from './places/route.js';
 import {workspaceName, standing} from './session.js';
 import {load, save, type Settings, type Standing} from './settings/store.js';
@@ -247,6 +247,44 @@ const whereWeAre = (): Where => ({
   composerEmpty: state.input === ''
 });
 
+// ── ONE SCROLLING MODEL, FOR WHATEVER IS OPEN ───────────────────────────────
+//
+// The wheel and the paging keys used to reach only the transcript: they sat in
+// the switch below, which a place or the launcher returns before. So a page
+// longer than the window could be read only by someone who knew an arrow key
+// would move it — content reachable by a hidden shortcut, which is content
+// hidden.
+//
+// Now one function answers "scroll what?", and the wheel, PgUp/PgDn and the
+// arrows all go through it. A surface that can scroll scrolls the same way
+// wherever you are.
+function scrollOpen(delta: number): boolean {
+  if (state.place !== null) {
+    const full = PLACES.find(p => p.id === state.place && p.full);
+    if (full) { edit(s => ({...s, pageAt: Math.max(0, s.pageAt + delta)})); return true; }
+    // A place with a list moves its cursor instead — scrolling a chooser past
+    // its own selection is how a person loses the thing they were choosing.
+    if (state.place === 'history')
+      { edit(s => ({...s, recordAt: clampTo(s.recordAt + delta, s.record?.length ?? 0)})); return true; }
+    if (state.place === 'conversations')
+      { edit(s => ({...s, conversationAt: clampTo(s.conversationAt + delta, s.conversations?.length ?? 0)})); return true; }
+    if (state.place === 'mode' || state.place === 'policy' || state.place === 'language') {
+      const rows = state.place === 'mode' ? 3
+        : state.place === 'policy' ? state.policy.length : state.languages.length;
+      edit(s => ({...s, at: clampTo(s.at + delta, rows)}));
+      return true;
+    }
+    return true;   // a reference place has nothing to scroll, and swallows it
+  }
+  if (launcherUp(state)) {
+    edit(s => ({...s, launcher: {...s.launcher, at: clampTo(s.launcher.at + delta, offered(s).length)}}));
+    return true;
+  }
+  return false;    // nothing is open: the transcript takes it
+}
+
+const clampTo = (n: number, length: number) => Math.max(0, Math.min(Math.max(0, length - 1), n));
+
 function key(k: Key) {
   // What a key MEANS is decided by a pure function, so the whole table can be
   // asserted as a matrix rather than discovered by pressing keys at a running
@@ -258,6 +296,24 @@ function key(k: Key) {
   }
   if (act.do === 'open-place') {
     edit(s => ({...s, place: act.place}));
+    return;
+  }
+
+  // The wheel is answered first and everywhere: it is the one input a person
+  // uses without being told it exists, so it must never depend on knowing
+  // where they are.
+  if (k.name === 'wheelUp' || k.name === 'wheelDown') {
+    const delta = k.name === 'wheelUp' ? -3 : 3;
+    if (opening.done && scrollOpen(delta)) return;
+    if (opening.done) { edit(s => scrollBy(s, {kind: 'lines', delta})); return; }
+  }
+
+  // A CLICK PICKS THE ROW IT LANDED ON, wherever that is. A list a person can
+  // walk with the arrows must be pickable with the pointer — the alternative is
+  // a chooser that works only for someone who knows which key moves it.
+  if (k.name === 'click' && opening.done && (state.place !== null || launcherUp(state))) {
+    const at = surfaceRowAt(state, k.row ?? 0);
+    if (at !== undefined) pickRow(at);
     return;
   }
 
@@ -285,9 +341,12 @@ function key(k: Key) {
     // Enter in each rather than by looking at them.
     // A full page scrolls with the same keys the transcript does — it is a
     // page, and a page is read by moving through it.
+    // Paging keys reach whatever is open, by the same route the wheel takes.
+    if (k.name === 'pageDown' || k.name === 'pageUp') {
+      if (scrollOpen(k.name === 'pageDown' ? 10 : -10)) return;
+    }
     if (state.place === 'help') {
-      const step = k.name === 'pageDown' ? 10 : k.name === 'down' ? 1 : k.name === 'pageUp' ? -10 : k.name === 'up' ? -1 : 0;
-      if (step !== 0) { edit(s => ({...s, pageAt: Math.max(0, s.pageAt + step)})); return; }
+      if (k.name === 'down' || k.name === 'up') { scrollOpen(k.name === 'down' ? 1 : -1); return; }
       if (k.name === 'home') { edit(s => ({...s, pageAt: 0})); return; }
     }
 
@@ -690,6 +749,33 @@ function inspect(goalId: string): void {
  * mode reaches the middleware through the live state it closes over, so it
  * takes effect on the very next hook call with no restart.
  */
+/**
+ * Put the cursor on the row a pointer landed on.
+ *
+ * The surface's rows include its heading and its subtitle, so the index a click
+ * gives is offset by them — the same two rows every place opens with. A click
+ * on a heading or a hint lands outside the list and is left alone rather than
+ * clamped onto the nearest row, because a pointer that moves a selection you
+ * did not point at is worse than one that does nothing.
+ */
+function pickRow(index: number): void {
+  const HEADER = 3;                    // name, subtitle, gap
+  const at = index - HEADER;
+  if (at < 0) return;
+  if (state.place === null) {
+    if (at < offered(state).length + 1) edit(s => ({...s, launcher: {...s.launcher, at: Math.max(0, index - 1)}}));
+    return;
+  }
+  if (state.place === 'history' && at < (state.record?.length ?? 0))
+    return void edit(s => ({...s, recordAt: at}));
+  if (state.place === 'conversations' && at < (state.conversations?.length ?? 0))
+    return void edit(s => ({...s, conversationAt: at}));
+  if (state.place === 'profiles' && at < PROFILES.length) return void edit(s => ({...s, at}));
+  if (state.place === 'mode' && at < 3) return void edit(s => ({...s, at}));
+  if (state.place === 'policy' && at < state.policy.length) return void edit(s => ({...s, at}));
+  if (state.place === 'language' && at < state.languages.length) return void edit(s => ({...s, at}));
+}
+
 function choose(): void {
   const MODES = ['automatic', 'approval', 'plan'] as const;
   const VALUES = ['allowed', 'needs-approval', 'forbidden'] as const;

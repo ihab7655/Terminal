@@ -16,12 +16,16 @@ export type Place = {
   readonly id: PlaceId;
   readonly number: number;
   /**
-   * A FULL PAGE rather than an overlay at the foot of the transcript.
+   * Every place is a full surface, and only the launcher is an overlay.
    *
-   * Most places answer a question you had while reading — they sit over the
-   * bottom rows and leave the transcript above them. A page is different: it
-   * is something you go to and read, so it takes the whole body and scrolls on
-   * its own.
+   * They used to sit over the bottom rows: a heading at the foot of a screen
+   * with a great empty space above it, which reads as a panel that failed to
+   * fill rather than as a page. A place is somewhere you GO — it takes the
+   * whole body, is laid out for what it is, and scrolls on its own.
+   *
+   * The launcher stays over the transcript, because it is not a place: it is
+   * the act of choosing one, and the thing you were reading should still be
+   * behind it.
    */
   readonly full?: boolean;
   /** How this place names itself, in the language in use. */
@@ -31,17 +35,17 @@ export type Place = {
 
 export const PLACES: readonly Place[] = [
   {id: 'help',      number: 1, name: s => s.places.help,      hint: s => s.places.helpHint, full: true},
-  {id: 'mode',      number: 2, name: s => s.places.mode,      hint: s => s.places.modeHint},
-  {id: 'policy',    number: 3, name: s => s.places.policy,    hint: s => s.places.policyHint},
-  {id: 'language',  number: 4, name: s => s.places.language,  hint: s => s.places.languageHint},
-  {id: 'workspace', number: 5, name: s => s.places.workspace, hint: s => s.places.workspaceHint},
-  {id: 'engine',    number: 6, name: s => s.places.engine,    hint: s => s.places.engineHint},
-  {id: 'history',   number: 7, name: s => s.places.history,   hint: s => s.places.historyHint},
-  {id: 'inspector', number: 8, name: s => s.places.inspector, hint: s => s.places.inspectorHint},
-  {id: 'capabilities', number: 9, name: s => s.places.capabilities, hint: s => s.places.capabilitiesHint},
-  {id: 'profiles', number: 10, name: s => s.places.profiles, hint: s => s.places.profilesHint},
-  {id: 'settings', number: 11, name: s => s.places.settings, hint: s => s.places.settingsHint},
-  {id: 'conversations', number: 12, name: s => s.places.conversations, hint: s => s.places.conversationsHint}
+  {id: 'mode',      number: 2, name: s => s.places.mode,      hint: s => s.places.modeHint, full: true},
+  {id: 'policy',    number: 3, name: s => s.places.policy,    hint: s => s.places.policyHint, full: true},
+  {id: 'language',  number: 4, name: s => s.places.language,  hint: s => s.places.languageHint, full: true},
+  {id: 'workspace', number: 5, name: s => s.places.workspace, hint: s => s.places.workspaceHint, full: true},
+  {id: 'engine',    number: 6, name: s => s.places.engine,    hint: s => s.places.engineHint, full: true},
+  {id: 'history',   number: 7, name: s => s.places.history,   hint: s => s.places.historyHint, full: true},
+  {id: 'inspector', number: 8, name: s => s.places.inspector, hint: s => s.places.inspectorHint, full: true},
+  {id: 'capabilities', number: 9, name: s => s.places.capabilities, hint: s => s.places.capabilitiesHint, full: true},
+  {id: 'profiles', number: 10, name: s => s.places.profiles, hint: s => s.places.profilesHint, full: true},
+  {id: 'settings', number: 11, name: s => s.places.settings, hint: s => s.places.settingsHint, full: true},
+  {id: 'conversations', number: 12, name: s => s.places.conversations, hint: s => s.places.conversationsHint, full: true}
 ];
 
 /** The query behind a leading slash, or null when the line is not a command. */
