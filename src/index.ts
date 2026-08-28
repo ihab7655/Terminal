@@ -13,7 +13,7 @@ import {
   type State
 } from './console.js';
 import {isFailure, openEngine, type Engine} from './engine.js';
-import {shortWorkspace, standing} from './session.js';
+import {workspaceName, standing} from './session.js';
 import {next as newerInHistory, previous as olderInHistory, remember} from './history.js';
 import {onKey, type Key} from './keys.js';
 import {advance, openingRows, skipOpening, startOpening, TICK_MS, type Opening} from './opening.js';
@@ -33,7 +33,7 @@ import {paint, releaseScreen, screenSize, takeScreen} from './screen.js';
 let opening: Opening = startOpening();
 // The workspace is on the rail from the first frame — it is where files land,
 // and a person should never have to discover that afterwards.
-let state: State = {...emptyState(), workspace: shortWorkspace(standing().workspace)};
+let state: State = {...emptyState(), workspace: workspaceName(standing().workspace)};
 
 // The engine, once it answers. Absent means the console is usable and says so
 // when asked to do something that needs one — not that it is broken.

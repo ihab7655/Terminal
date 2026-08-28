@@ -46,15 +46,23 @@ export function standing(remembered?: string, cwd = process.cwd()): Standing {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * How the workspace reads on one line of a rail.
+ * How the workspace READS — a naming decision, not a fitting one.
  *
- * The home directory becomes `~` because that is how a person refers to it,
- * and a long path keeps its END — the last segments are what identify a
- * project, and the first are what every path on a machine has in common.
+ * The home directory becomes `~` because that is how a person refers to it.
+ * That is all this does.
+ *
+ * IT DOES NOT TRUNCATE, and the absence is the point (rule 5: the content
+ * decides the layout, never the other way round). An earlier version of this
+ * function carried a `budget = 28` and cut the path to fit — a fixed dimension
+ * invented here, held next to a rail that already measures the real width and
+ * gives way correctly: `rail()` drops its status WHOLE first, then cuts the
+ * title with an ellipsis, at whatever width the window actually is. Two
+ * opinions about the same edge, one of them blind to the window, is precisely
+ * the arithmetic that has to be re-derived at every size — and the sizes are
+ * unbounded.
+ *
+ * So this says what the workspace IS, and the rail decides what survives.
  */
-export function shortWorkspace(path: string, home = process.env['HOME'] ?? '', budget = 28): string {
-  const short = home !== '' && path.startsWith(home) ? '~' + path.slice(home.length) : path;
-  if ([...short].length <= budget) return short;
-  const chars = [...short];
-  return '…' + chars.slice(chars.length - (budget - 1)).join('');
+export function workspaceName(path: string, home = process.env['HOME'] ?? ''): string {
+  return home !== '' && path.startsWith(home) ? '~' + path.slice(home.length) : path;
 }

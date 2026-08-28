@@ -565,8 +565,16 @@ function footerRows(state: State, width: number, below: number): string[] {
   const prompt = tint('  › ', colour.amber);
   const line =
     state.input.length === 0
-      ? prompt + INVERSE + ' ' + RESET + tint(' say something to the engine', colour.muted) +
-        tint('        ? keys', colour.dim)
+      ? prompt +
+        INVERSE + ' ' + RESET +
+        tint(' say something to the engine', colour.muted) +
+        // Offered where the composer is not being used, and gone the moment a
+        // person types. Appended as ORDINARY TEXT with a separator — an earlier
+        // version padded it out with a run of spaces, which is saying where to
+        // put something rather than what to show. `fitStyled` below cuts this
+        // line at the real width like any other, so a narrow window loses the
+        // hint before it loses the prompt, with no arithmetic here.
+        tint(' · ? keys', colour.dim)
       : prompt + colour.ink + before + INVERSE + at + RESET + colour.ink + after + RESET;
 
   // ── WHAT THE CLOSING RAIL CARRIES ──────────────────────────────────────────
