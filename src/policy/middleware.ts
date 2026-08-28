@@ -49,6 +49,16 @@ export type Live = {
   ask(request: ApprovalRequest): Promise<Answer>;
   /** A person said `keep this` — the console persists it and says so. */
   remember(request: ApprovalRequest, answer: 'command' | 'row'): void;
+  /**
+   * The console refused a call by its own policy.
+   *
+   * It has to SAY so. Observed live on 2026-08-28: with writes forbidden, a
+   * goal produced five failing tool calls and the transcript reported only
+   * that the engine had noticed problems — the one thing a person needed to
+   * know, that this console refused them, was the one thing missing. A refusal
+   * the console makes and does not report is the console hiding its own act.
+   */
+  refused(request: {toolName: string; reason: string}): void;
 };
 
 export type Control = {
@@ -121,7 +131,10 @@ export function makeControl(Signal: new (message: string) => Error, live: Live):
 
         const verdict: Verdict = decide(live.mode(), live.table(), facts, live.standing());
         if (verdict.verdict === 'allow') return {allow: true};
-        if (verdict.verdict === 'deny') return {allow: false, reason: verdict.reason};
+        if (verdict.verdict === 'deny') {
+          live.refused({toolName: ctx.toolName, reason: verdict.reason});
+          return {allow: false, reason: verdict.reason};
+        }
 
         const request: ApprovalRequest = {
           id: `ask-${++asked}`,

@@ -24,6 +24,15 @@ export const en: Catalogue = {
     folds: 'Tab folds',
     rowsBelow: {one: '{n} row below · PgDn', other: '{n} rows below · PgDn'}
   },
+  asked: {
+    hint: 'it says this is what it will do',
+    once: 'allow once',
+    thisCommand: 'always this exact command',
+    wholeRow: 'always this, here',
+    refuse: 'refuse',
+    askedBy: 'asked by'
+  },
+
   engine: {
     waking: 'waking the engine',
     none: 'no engine — nothing to run this against',

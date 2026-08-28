@@ -58,6 +58,38 @@ export function rowsFor(effects: readonly string[] | undefined): EffectId[] {
   return [...rows];
 }
 
+// ── ONE EFFECT CONTAINS OTHERS, AND A POLICY THAT IGNORES THAT IS A FICTION ─
+//
+// `process:spawn` starts an arbitrary runtime. That runtime can write files,
+// reach the network and drive git — so permitting it while forbidding those is
+// not a stricter policy, it is the same policy with a longer way round.
+//
+// FOUND BY USING IT, not by reading. With fs:write forbidden and
+// process:spawn allowed, a real goal on 2026-08-28 was refused at `write_file`
+// and refused again at `bash`, and then wrote the file through `execute_code`
+// — which declares `process:spawn` and nothing else, truthfully: spawning is
+// what it does, and what the spawned code then does is not something the
+// capability can declare. This is the same shape ADR-009 records from the
+// engine's own history, and the reason its policy seam is keyed on effects
+// rather than tool names in the first place.
+//
+// The fix is NOT a list of tool names to also block — that is the closed list
+// ADR-009 removed, rebuilt in the console. It is to treat containment as what
+// it is: a call that spawns is governed by the spawn row AND by every row a
+// process could reach. So forbidding writes forbids the shell too, and a
+// person who wants the shell must permit what the shell can do. That is not a
+// surprise to be hidden; it is stated on the policy screen and in the refusal.
+const CONTAINS: Partial<Record<EffectId, readonly EffectId[]>> = {
+  'process:spawn': ['fs:read', 'fs:write', 'network:read', 'vcs:write']
+};
+
+/** Every row that governs a call — those declared, and those they contain. */
+export function governing(rows: readonly EffectId[]): EffectId[] {
+  const all = new Set<EffectId>(rows);
+  for (const r of rows) for (const inner of CONTAINS[r] ?? []) all.add(inner);
+  return [...all];
+}
+
 const covers = (s: Standing, call: CallFacts, rows: readonly EffectId[]): boolean =>
   s.workspace === call.workspace &&
   (s.kind === 'command'
@@ -77,7 +109,9 @@ export function decide(
   call: CallFacts,
   standing: readonly Standing[] = []
 ): Verdict {
-  const rows = rowsFor(call.effects);
+  const declared = rowsFor(call.effects);
+  // What it declared, plus everything those declarations can reach.
+  const rows = governing(declared);
 
   // Forbidden first, and before standing approvals: a permission granted in
   // passing must never outrank a row a person set deliberately.
@@ -91,7 +125,10 @@ export function decide(
 
   if (mode === 'automatic') return {verdict: 'allow'};
 
-  const asking = rows.filter(r => table[r] === 'needs-approval');
+  // Asking is scoped to what was DECLARED: a person answering a question about
+  // a shell command should be told it is a shell command, not handed the list
+  // of everything a shell could theoretically do.
+  const asking = declared.filter(r => table[r] === 'needs-approval');
   if (asking.length === 0) return {verdict: 'allow'};
   if (standing.some(s => covers(s, call, asking))) return {verdict: 'allow'};
   return {verdict: 'ask', effects: asking};
@@ -99,4 +136,7 @@ export function decide(
 
 /** Said to the WORKER, which reads it as a refused call and adapts. */
 const reasonFor = (rows: readonly EffectId[], call: CallFacts): string =>
-  `${call.toolName} is not permitted here: ${rows.join(', ')} is forbidden in ${call.workspace}`;
+  `${call.toolName} is not permitted here: ${rows.join(', ')} is forbidden in ${call.workspace}` +
+  (call.effects?.includes('process:spawn') && !rows.includes('process:spawn')
+    ? ' — and a process can do it, so spawning one is refused too'
+    : '');

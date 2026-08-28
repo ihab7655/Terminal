@@ -49,6 +49,15 @@ export const ar: Catalogue = {
       other: '{n} سطر تحت · PgDn'
     }
   },
+  asked: {
+    hint: 'يقول إن هذا ما سيفعله',
+    once: 'اسمح مرّة',
+    thisCommand: 'اسمح لهذا الأمر دائماً',
+    wholeRow: 'اسمح لهذا هنا دائماً',
+    refuse: 'ارفض',
+    askedBy: 'طلبها'
+  },
+
   engine: {
     waking: 'يوقظ المحرّك',
     none: 'لا محرّك — لا شيء يُشغَّل عليه',

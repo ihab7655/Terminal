@@ -1,4 +1,4 @@
-import {decide, rowsFor, type CallFacts} from './decide.js';
+import {decide, governing, rowsFor, type CallFacts} from './decide.js';
 import {defaults, EFFECTS, type EffectTable, type Mode, type Permission, type Standing} from '../settings/store.js';
 
 let failed = 0;
@@ -34,7 +34,13 @@ ok('and the refusal says why, to the worker that reads it',
 ok('"work without interrupting me, but never git" is expressible',
   decide('automatic', {...table('allowed'), 'vcs:write': 'forbidden'},
     call({toolName: 'git', effects: ['vcs:write']})).verdict === 'deny' &&
-  decide('automatic', {...table('allowed'), 'vcs:write': 'forbidden'}, call()).verdict === 'allow');
+  decide('automatic', {...table('allowed'), 'vcs:write': 'forbidden'},
+    call({toolName: 'read_file', effects: ['fs:read']})).verdict === 'allow');
+// And the shell is NOT still allowed under that policy — a shell can run git.
+// Asserted here because the first version of this test said it was, which was
+// the leak: it read as a stricter policy while leaving the way round open.
+ok('and it forbids the shell too, because a shell reaches git',
+  decide('automatic', {...table('allowed'), 'vcs:write': 'forbidden'}, call()).verdict === 'deny');
 
 console.log('\nwhat the engine declared decides which rows apply');
 ok('undefined effects are NOT harmless — they are undeclared',
@@ -69,6 +75,29 @@ ok('neither reaches another workspace',
   decide('approval', table('needs-approval'), call({workspace: '~/elsewhere'}), [cmd, row]).verdict === 'ask');
 ok('and NEITHER outranks forbidden — a passing yes cannot beat a deliberate no',
   decide('approval', table('forbidden'), call(), [cmd, row]).verdict === 'deny');
+
+console.log('\nspawning contains what a process can reach — found by using it');
+// 2026-08-28: fs:write forbidden, process:spawn allowed. write_file was
+// refused, bash was refused, and the worker wrote the file through
+// execute_code — which declares process:spawn and nothing else, truthfully.
+const spawnCall = call({toolName: 'execute_code', effects: ['process:spawn'], target: 'node'});
+const noWrites = {...table('allowed'), 'fs:write': 'forbidden' as Permission};
+ok('forbidding writes refuses a spawn, because a process can write',
+  decide('automatic', noWrites, spawnCall).verdict === 'deny');
+ok('and the refusal explains the containment rather than looking arbitrary',
+  (decide('automatic', noWrites, spawnCall) as {reason: string}).reason.includes('a process can do it'));
+ok('forbidding git refuses a spawn too — a shell can run git',
+  decide('automatic', {...table('allowed'), 'vcs:write': 'forbidden'}, spawnCall).verdict === 'deny');
+ok('while a spawn with nothing forbidden under it is allowed',
+  decide('automatic', table('allowed'), spawnCall).verdict === 'allow');
+ok('containment is one-way — writing a file does not spawn anything',
+  decide('automatic', {...table('allowed'), 'process:spawn': 'forbidden'},
+    call({toolName: 'write_file', effects: ['fs:write']})).verdict === 'allow');
+ok('the governing set is the declaration plus what it reaches',
+  governing(['process:spawn']).length === 5 && governing(['fs:read']).length === 1);
+const spawnAsk = decide('approval', {...table('allowed'), 'process:spawn': 'needs-approval'}, spawnCall) as {effects: readonly string[]};
+ok('but a QUESTION names only what was declared — not everything a shell could do',
+  spawnAsk.effects.join() === 'process:spawn', spawnAsk);
 
 console.log('\nthe shipped defaults');
 const d = defaults();

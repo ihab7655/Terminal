@@ -148,5 +148,28 @@ ok('a stopped run reads as its reason, which is what the summary carries',
     return i?.kind === 'spoke' && i.text === 'stopped from the console';
   })());
 
+
+// ── A REFUSED CALL CHANGED NOTHING, AND MUST NOT SAY IT DID ─────────────────
+//
+// Found live on 2026-08-28: with writes forbidden by the console's own policy,
+// a refused `write_file` still read `Wrote 1 file · +1 line` — the arguments
+// say what a write WOULD have contained, and the console was presenting them
+// as what it did contain.
+{
+  const args = {path: 'x.py', content: 'one\ntwo\n'};
+  const okCall = toItem({
+    eventType: 'tool.called', goalId: 'g',
+    payload: {toolName: 'write_file', args, success: true, durationMs: 1}
+  }) as {changes?: unknown[]};
+  const refused = toItem({
+    eventType: 'tool.called', goalId: 'g',
+    payload: {toolName: 'write_file', args, success: false, durationMs: 1,
+              stderrSummary: '[ERROR] Blocked: fs:write is forbidden'}
+  }) as {changes?: unknown[]; state?: string};
+  ok('a write that happened carries its lines', (okCall.changes ?? []).length === 2);
+  ok('a write that was refused carries none', refused.changes === undefined);
+  ok('and is marked failed, not written', refused.state === 'failed');
+}
+
 console.log(failed === 0 ? '\nall good.\n' : `\n${failed} failed.\n`);
 process.exit(failed === 0 ? 0 : 1);

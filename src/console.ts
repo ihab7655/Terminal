@@ -43,6 +43,22 @@ export type ItemState = 'ok' | 'failed' | 'running';
 export type Change = {readonly sign: '+' | '-'; readonly text: string};
 
 export type Item =
+  /**
+   * A call the engine is holding, and what it wants permission for.
+   *
+   * An overlay in the console rather than a place to go to: the reason to say
+   * yes is usually the row above it, and going somewhere to answer a yes/no is
+   * the barrier that got a whole screen deleted once already.
+   */
+  | {
+      kind: 'asked';
+      id: string;
+      toolName: string;
+      effects: readonly string[];
+      target?: string;
+      requester: string;
+      workspace: string;
+    }
   /** What the person asked for. The anchor of the whole log. */
   | {kind: 'said'; id: string; text: string}
   /**
@@ -342,6 +358,40 @@ function itemRows(item: Item, state: State, width: number, verbs: number): strin
     const detail = [item.detail, elapsed].filter(Boolean).join(' · ');
     const body = fit(detail ? `${item.text} · ${detail}` : item.text, Math.max(8, width - left));
     return [head + tint(body, colour.muted)];
+  }
+
+  // ── A HELD CALL ─────────────────────────────────────────────────────────
+  //
+  // Drawn where the transcript ends, with the exact target the capability
+  // named, and the three ways to answer. Nothing is guessed about the command
+  // — it is shown as it will be run, which is why this console has no
+  // "dangerous command" detector: a person reads it and decides.
+  if (item.kind === 'asked') {
+    const say = catalogueFor(state.language);
+    const left = INDENT + MARK;
+    const room = Math.max(8, width - left);
+    // What the decision is ABOUT goes first and alone: the effect, then the
+    // exact target. Who asked is context and gets its own row — the engine's
+    // `requester.role` is whatever that worker calls itself, and observed live
+    // it can be an entire system prompt. It is not shortened here; it is put
+    // where a long line is ordinary, and `fit` cuts it at the real width like
+    // every other row.
+    const rows = [
+      ' '.repeat(INDENT) + tint('▸', colour.amber) + ' ' +
+        tint(fit(item.effects.join(' · '), room), colour.ink)
+    ];
+    if (item.target !== undefined)
+      rows.push(' '.repeat(left) + tint(fit(item.target, room), colour.ink));
+    rows.push(' '.repeat(left) + tint(fit(`${item.workspace} · ${say.asked.hint}`, room), colour.dim));
+    rows.push(' '.repeat(left) + tint(fit(`${say.asked.askedBy} ${item.requester}`, room), colour.dim));
+    rows.push(
+      ' '.repeat(left) +
+        tint('y', colour.cyan) + tint(' ' + say.asked.once + '   ', colour.muted) +
+        tint('c', colour.cyan) + tint(' ' + say.asked.thisCommand + '   ', colour.muted) +
+        tint('r', colour.cyan) + tint(' ' + say.asked.wholeRow + '   ', colour.muted) +
+        tint('n', colour.cyan) + tint(' ' + say.asked.refuse, colour.muted)
+    );
+    return rows;
   }
 
   const mark = markOf(item, state.spinner);

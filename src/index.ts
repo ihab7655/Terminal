@@ -63,8 +63,20 @@ const live: Live = {
   ask: request =>
     new Promise<Answer>(resolve => {
       waiting.push({request, answer: resolve});
+      add({
+        kind: 'asked',
+        id: request.id,
+        toolName: request.toolName,
+        effects: request.effects,
+        ...(request.target === undefined ? {} : {target: request.target}),
+        requester: request.requester,
+        workspace: workspaceName(request.workspace)
+      });
       edit(s => ({...s, waiting: waiting.length}));
     }),
+  refused: ({toolName, reason}) => {
+    add({kind: 'noted', id: `refused-${Date.now()}-${toolName}`, lines: [`refused ${toolName} — ${reason}`]});
+  },
   remember: (request, answer) => {
     const kept: Standing = {
       kind: answer === 'command' ? 'command' : 'effect',
@@ -280,6 +292,13 @@ function key(k: Key) {
     const answer: Answer =
       k.text === 'y' ? 'once' : k.text === 'c' ? 'command' : k.text === 'r' ? 'row' : 'refuse';
     const held = waiting.shift()!;
+    edit(s => ({
+      ...s,
+      // The question goes when it is answered: a request still on screen after
+      // it was decided is the console asserting a state that has passed.
+      items: s.items.filter(i => i.id !== held.request.id),
+      waiting: waiting.length
+    }));
     add({
       kind: 'noted',
       id: `answered-${held.request.id}`,
@@ -289,7 +308,6 @@ function key(k: Key) {
           : `allowed ${held.request.toolName}${answer === 'once' ? '' : ' — and kept'}`
       ]
     });
-    edit(s => ({...s, waiting: waiting.length}));
     held.answer(answer);
     return;
   }

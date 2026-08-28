@@ -15,6 +15,7 @@ class Signal extends Error {}
 const harness = (mode: Mode, over: Partial<EffectTable> = {}, answer: Answer = 'once') => {
   const asked: ApprovalRequest[] = [];
   const kept: Array<[ApprovalRequest, string]> = [];
+  const refusals: Array<{toolName: string; reason: string}> = [];
   const standing: Standing[] = [];
   const live: Live = {
     mode: () => mode,
@@ -22,9 +23,10 @@ const harness = (mode: Mode, over: Partial<EffectTable> = {}, answer: Answer = '
     standing: () => standing,
     workspace: () => '~/x',
     ask: async r => { asked.push(r); return answer; },
-    remember: (r, a) => void kept.push([r, a])
+    remember: (r, a) => void kept.push([r, a]),
+    refused: r => void refusals.push(r)
   };
-  return {control: makeControl(Signal, live), asked, kept, standing};
+  return {control: makeControl(Signal, live), asked, kept, standing, refusals};
 };
 
 const call = (over: Record<string, unknown> = {}) => ({
@@ -99,6 +101,8 @@ console.log('\napproval — the only hook that can answer');
   const d = await mw(h).beforeToolCall(call());
   ok('but forbidden still refuses, in automatic', d.allow === false);
   ok('and no question is asked about a settled no', h.asked.length === 0);
+  ok('and the console SAYS it refused — a refusal it hides is an act it hides',
+    h.refusals.length === 1 && h.refusals[0]!.toolName === 'terminal');
 }
 
 console.log('\nwhat the engine declared is what governs');

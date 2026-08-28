@@ -149,7 +149,13 @@ export function toItem(event: EngineEvent): Item | undefined {
       // all additions because that is what a write is; an edit is its removal
       // and its addition. This console does not diff files — it shows what the
       // call said it was doing.
-      const changes = diffOf(verb, args);
+      // ONLY FOR A CALL THAT SUCCEEDED. The arguments say what a write WOULD
+      // have contained; whether it happened is the result's to say. Observed
+      // live on 2026-08-28: a write refused by this console's own policy still
+      // read `Wrote 1 file · +1 line`, which is the console asserting a change
+      // that never occurred — the one thing a display of an execution may
+      // never do.
+      const changes = ok ? diffOf(verb, args) : undefined;
       const about =
         str(args['path']) ??
         str(args['command']) ??
