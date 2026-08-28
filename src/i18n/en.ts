@@ -87,6 +87,9 @@ export const en: Catalogue = {
     language: 'Language', languageHint: 'every word this console writes',
     workspace: 'Workspace', workspaceHint: 'where work lands, and this session',
     engine: 'Engine', engineHint: 'what it was given, and whether it answered',
+    history: 'History', historyHint: 'every goal this engine has run',
+    loading: 'reading the record…',
+    nothingYet: 'nothing on record yet',
     choose: '↑↓ choose · Enter open · Esc close',
     nothingMatches: 'nothing by that name'
   },

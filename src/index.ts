@@ -257,7 +257,23 @@ function key(k: Key) {
     }
     if (k.name === 'enter') {
       const place = chosen(state);
-      if (place) edit(s => ({...s, place: place.id, launcher: {open: false, at: 0}, input: '', caret: 0}));
+      if (place) {
+        edit(s => ({...s, place: place.id, launcher: {open: false, at: 0}, input: '', caret: 0}));
+        // History is READ when it is opened, never held live: the event stream
+        // is live-only and does not survive the process, so what happened
+        // before comes from the engine's store or from nowhere.
+        if (place.id === 'history' && engine) {
+          edit(s => ({...s, record: null}));
+          void engine.goals(40).then(rows => {
+            edit(s => ({...s, record: rows.map(r => ({
+              id: r.id,
+              goal: r.goal.split('\n')[0] ?? r.goal,
+              status: r.status,
+              at: new Date(r.createdAt).toISOString().replace('T', ' ').split('.')[0] ?? ''
+            }))}));
+          }).catch(() => edit(s => ({...s, record: []})));
+        }
+      }
       return;
     }
   } else if (k.ctrl && k.text === 'k') {

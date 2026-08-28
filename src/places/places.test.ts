@@ -22,6 +22,15 @@ ok('src/index.ts is a path, not a launcher', queryOf('src/index.ts') === null);
 ok('a leading slash is a command', queryOf('/keys') === 'keys');
 ok('an empty line is not', queryOf('') === null);
 
+console.log('\na space before the slash is a typo, not a path');
+ok('" /hist" is still a command',
+  queryOf(' /hist') === 'hist', queryOf(' /hist'));
+ok('and so is a tab before it', queryOf('\t/keys') === 'keys');
+ok('but a slash after real text is still a path',
+  queryOf(' src/index.ts') === null);
+ok('and what follows the slash is untouched — including its own spaces',
+  queryOf('  /what it may do') === 'what it may do');
+
 console.log('\nthe filter reads the id AND the name in the language in use');
 ok('English: "how" reaches How it runs',
   matching('how', en)[0]?.id === 'mode');

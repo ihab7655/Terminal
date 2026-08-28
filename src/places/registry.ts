@@ -10,7 +10,7 @@ import type {Catalogue} from '../i18n/catalogue.js';
 // A place's NUMBER is its own, not its position in a filtered list — so it does
 // not move as a query narrows, and the number a person learned stays true.
 
-export type PlaceId = 'keys' | 'mode' | 'policy' | 'language' | 'workspace' | 'engine';
+export type PlaceId = 'keys' | 'mode' | 'policy' | 'language' | 'workspace' | 'engine' | 'history';
 
 export type Place = {
   readonly id: PlaceId;
@@ -26,14 +26,22 @@ export const PLACES: readonly Place[] = [
   {id: 'policy',    number: 3, name: s => s.places.policy,    hint: s => s.places.policyHint},
   {id: 'language',  number: 4, name: s => s.places.language,  hint: s => s.places.languageHint},
   {id: 'workspace', number: 5, name: s => s.places.workspace, hint: s => s.places.workspaceHint},
-  {id: 'engine',    number: 6, name: s => s.places.engine,    hint: s => s.places.engineHint}
+  {id: 'engine',    number: 6, name: s => s.places.engine,    hint: s => s.places.engineHint},
+  {id: 'history',   number: 7, name: s => s.places.history,   hint: s => s.places.historyHint}
 ];
 
 /** The query behind a leading slash, or null when the line is not a command. */
 export function queryOf(line: string): string | null {
   // Only at the start. A slash anywhere else belongs to what is being written —
   // `src/index.ts` is a path, not a command.
-  return line.startsWith('/') ? line.slice(1) : null;
+  //
+  // Leading blanks are ignored, and that is not laxness: a space before a slash
+  // is a typo, never a path. Observed 2026-08-28 — a stray space ahead of
+  // `/history` made it a goal, and the console ran `list_dir` while a person
+  // waited for a list of their own sessions. Nothing after the slash is
+  // touched: the query is exactly what was typed.
+  const start = line.replace(/^\s+/, '');
+  return start.startsWith('/') ? start.slice(1) : null;
 }
 
 /**

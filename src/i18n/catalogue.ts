@@ -119,6 +119,9 @@ export type Catalogue = {
     readonly language: string; readonly languageHint: string;
     readonly workspace: string; readonly workspaceHint: string;
     readonly engine: string; readonly engineHint: string;
+    readonly history: string; readonly historyHint: string;
+    readonly loading: string;
+    readonly nothingYet: string;
     readonly choose: string;
     readonly nothingMatches: string;
   };

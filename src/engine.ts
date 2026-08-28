@@ -47,6 +47,15 @@ export type Engine = {
    * arrived — the window where a stop is worth most.
    */
   submit(req: Submission): Promise<{success: boolean; status: string}>;
+  /** Every goal on record, newest first — `listGoals()` on the engine's store. */
+  goals(limit?: number): Promise<readonly GoalRow[]>;
+  /**
+   * The whole record of ONE execution — `replay()`, a public engine export.
+   *
+   * Assembled on demand from storage, never held live: it is the counterpart of
+   * the event stream, which is live-only and does not survive the process.
+   */
+  record(goalId: string): Promise<ExecutionRecord | null>;
   /**
    * Amend a goal that is already running (ADR-012).
    *
@@ -68,6 +77,27 @@ export type Engine = {
   // point: when it needs something it says so and the goal ends, and the next
   // thing typed is an ordinary `submit` that arrives with the exchange above it.
   shutdown(): Promise<void>;
+};
+
+/** One row of history, as the engine's store returns it. */
+export type GoalRow = {
+  readonly id: string;
+  readonly goal: string;
+  readonly status: string;
+  readonly createdAt: Date;
+};
+
+/** One execution, read whole. Narrowed here so nothing above sees engine types. */
+export type ExecutionRecord = {
+  readonly goalId: string;
+  readonly status: string;
+  readonly attempts: number | null;
+  readonly durationMs: number | null;
+  readonly workspace: string | null;
+  readonly tasks: readonly string[];
+  readonly evidence: readonly string[];
+  readonly workers: ReadonlyArray<{role: string; status: string; steps: number | null}>;
+  readonly retries: readonly string[];
 };
 
 export type EngineFailure = {
@@ -152,6 +182,7 @@ export async function openEngine(
       };
       loadRuntimeConfigFromEnv(): unknown;
       MiddlewareControlSignal: new (message: string) => Error;
+      replay(goalId: string, storage: unknown): Promise<unknown>;
     };
     const config = core.loadRuntimeConfigFromEnv();
     // The engine's own signal class, handed to the host's own middleware — the
@@ -221,6 +252,41 @@ export async function openEngine(
       // conclusion from the events instead, which is the one account.
       steer: async (goalId, text) => {
         await (app['steerGoal'] as (g: string, t: string) => Promise<unknown>)(goalId, text);
+      },
+      goals: async limit => {
+        const storage = (app['context'] as {storage: Record<string, unknown>}).storage;
+        const rows = await (storage['listGoals'] as (n?: number) => Promise<GoalRow[]>)(limit);
+        return rows ?? [];
+      },
+      record: async goalId => {
+        const storage = (app['context'] as {storage: unknown}).storage;
+        const data = (await core.replay(goalId, storage)) as Record<string, unknown>;
+        if (!data) return null;
+        const rec = (data['goalRecord'] ?? {}) as Record<string, unknown>;
+        const snaps = (data['planningSnapshots'] ?? []) as Array<Record<string, unknown>>;
+        // The tasks of the LAST attempt: an earlier attempt's plan is history
+        // the retry rows already carry, and showing every attempt's tasks at
+        // once reads as one plan far larger than any that existed.
+        const last = snaps[snaps.length - 1]?.['snapshot'] as Record<string, unknown> | undefined;
+        const plan = (last?.['taskPlan'] ?? last) as Record<string, unknown> | undefined;
+        const children = (plan?.['childTasks'] ?? []) as Array<Record<string, unknown>>;
+        return {
+          goalId,
+          status: String(rec['status'] ?? 'unknown'),
+          attempts: (rec['attempts'] as number | null) ?? null,
+          durationMs: (rec['durationMs'] as number | null) ?? null,
+          workspace: (rec['workspacePath'] as string | null) ?? null,
+          tasks: children.map(t => String(t['title'] ?? '')).filter(Boolean),
+          evidence: ((data['evidence'] ?? []) as Array<Record<string, unknown>>)
+            .map(e => String(e['type'] ?? '')).filter(Boolean),
+          workers: ((data['workers'] ?? []) as Array<Record<string, unknown>>).map(w => ({
+            role: String(w['role'] ?? ''),
+            status: String(w['status'] ?? ''),
+            steps: (w['stepsCount'] as number | null) ?? null
+          })),
+          retries: ((data['retryHistory'] ?? []) as Array<Record<string, unknown>>)
+            .map(r => String(r['lesson'] ?? r['reason'] ?? '')).filter(Boolean)
+        };
       },
       cancel: goalId => control.cancel(goalId),
       shutdown: () => (app['shutdown'] as () => Promise<void>)()

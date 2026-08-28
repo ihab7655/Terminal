@@ -199,6 +199,17 @@ export type State = {
   sessionId: string;
   /** What the engine was given, and whether it answered — lines, already said. */
   engineFacts: readonly string[];
+  /**
+   * Goals on record, newest first, once History has been opened.
+   *
+   * Named `record` rather than `history` because `history` on this same object
+   * is the input recall — the console's own, and a different thing entirely.
+   *
+   * `null` means it has not been read yet, and the screen says so rather than
+   * showing an empty list — "nothing on record" and "not looked yet" are
+   * different facts, and a console that draws one as the other is guessing.
+   */
+  record: readonly {id: string; goal: string; status: string; at: string}[] | null;
 };
 
 export const emptyState = (): State => ({
@@ -220,7 +231,8 @@ export const emptyState = (): State => ({
   policy: [],
   languages: [],
   sessionId: '',
-  engineFacts: []
+  engineFacts: [],
+  record: null
 });
 
 const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -899,6 +911,13 @@ function placeRows(state: State, width: number): string[] {
       break;
     case 'engine':
       for (const l of state.engineFacts) rows.push(line(l, colour.muted));
+      break;
+    case 'history':
+      if (state.record === null) { rows.push(line(say.places.loading, colour.dim)); break; }
+      if (state.record.length === 0) { rows.push(line(say.places.nothingYet, colour.dim)); break; }
+      for (const g of state.record)
+        rows.push(line(`${g.at}  ${g.status}  ${g.goal}`,
+          g.status === 'completed' ? colour.muted : g.status === 'failed' ? colour.red : colour.dim));
       break;
   }
   return rows;

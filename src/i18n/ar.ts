@@ -112,6 +112,9 @@ export const ar: Catalogue = {
     language: 'اللغة', languageHint: 'كل كلمة يكتبها هذا الكونسول',
     workspace: 'مساحة العمل', workspaceHint: 'أين يقع العمل، وهذه الجلسة',
     engine: 'المحرّك', engineHint: 'بماذا زُوِّد، وهل أجاب',
+    history: 'السجلّ', historyHint: 'كل هدف نفّذه هذا المحرّك',
+    loading: 'يقرأ السجلّ…',
+    nothingYet: 'لا شيء في السجلّ بعد',
     choose: '↑↓ اختر · Enter افتح · Esc أغلق',
     nothingMatches: 'لا شيء بهذا الاسم'
   },
