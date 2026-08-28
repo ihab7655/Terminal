@@ -44,6 +44,15 @@ export const en: Catalogue = {
     forbiddenHolds: 'forbidden holds in every mode'
   },
 
+  steer: {
+    received: 'heard',
+    scoped: 'read',
+    delivered: 'the worker has it',
+    admitted: 'it goes into the plan',
+    superseded: 'replaced by what you said next',
+    not_delivered: 'the goal ended before it arrived'
+  },
+
   phases: {
     starting: 'starting',
     reading: 'reading the request',
@@ -66,7 +75,8 @@ export const en: Catalogue = {
     repairing: 'repairing {tool}',
     repaired: 'repaired {tool}',
     noEngineHere: 'no engine — nothing to run this against',
-    endedBadly: 'the goal ended badly'
+    endedBadly: 'the goal ended badly',
+    replanned: 'the plan changed for the next attempt'
   },
 
   places: {

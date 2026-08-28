@@ -273,6 +273,47 @@ export function toItem(event: EngineEvent, say: Catalogue = en): Item | undefine
               : `${resolver} did not produce one${reason ? `: ${reason}` : ''}`;
       return {kind: 'noted', id: id('noted'), lines: [said]};
     }
+    // ── an amendment, and what became of it ────────────────────────────────
+    //
+    // Six events for one row. The console does not merge them or guess a state
+    // between them: each arrives when the engine has concluded something, and
+    // the row shows the last one. `not_delivered` is an honest terminal state
+    // the engine declares rather than falling silent, so it is drawn like any
+    // other rather than hidden as a non-event.
+    case 'directive.received':
+    case 'directive.scoped':
+    case 'directive.delivered':
+    case 'directive.admitted':
+    case 'directive.superseded':
+    case 'directive.not_delivered': {
+      const directiveId = str(p['directiveId']);
+      const text = str(p['text']);
+      if (directiveId === undefined || text === undefined) return undefined;
+      const state = event.eventType.slice('directive.'.length);
+      const scope = str(p['scope']);
+      return {
+        kind: 'steer',
+        // The SAME id for all six, so a later state replaces the row rather
+        // than adding a second one about the same sentence.
+        id: `steer-${directiveId}`,
+        text,
+        state,
+        ...(scope === undefined ? {} : {scope})
+      };
+    }
+
+    // ── a worker finished, and what a retry re-planned ─────────────────────
+    case 'worker.done': {
+      const role = str(p['role']) ?? str(p['workerRole']);
+      return {kind: 'phase', since: now(), id: id('phase'),
+              text: say.phases.working, ...(role === undefined ? {} : {detail: role})};
+    }
+    case 'retry.plan_changed': {
+      const reason = str(p['reason']) ?? str(p['summary']);
+      return {kind: 'noted', id: id('noted'),
+              lines: [reason ? `${say.outcome.replanned}: ${reason}` : say.outcome.replanned]};
+    }
+
     case 'capability.evolution': {
       const phase = str(p['phase']);
       const capability = str(p['capability']) ?? '';

@@ -48,6 +48,14 @@ export type Engine = {
    */
   submit(req: Submission): Promise<{success: boolean; status: string}>;
   /**
+   * Amend a goal that is already running (ADR-012).
+   *
+   * It stops nothing and restarts nothing: the engine records what was said,
+   * reads what it changes, and routes it. What became of it arrives as the six
+   * `directive.*` events, so nothing here has to report it.
+   */
+  steer(goalId: string, text: string): Promise<void>;
+  /**
    * Stop a running goal at the engine's next boundary.
    *
    * Not an interrupt: see cancel.ts. The `stopped` line the reader sees comes
@@ -206,6 +214,13 @@ export async function openEngine(
           // draws one as the other.
           return {success: false, status: control.planOnly(goalId) ? 'planned' : 'stopped'};
         }
+      },
+      // `steerGoal` lives on ApplicationRuntime (checked, not assumed — the
+      // wrong name would compile through the index signature). It returns the
+      // Directive with the engine's conclusion on it; the console reads that
+      // conclusion from the events instead, which is the one account.
+      steer: async (goalId, text) => {
+        await (app['steerGoal'] as (g: string, t: string) => Promise<unknown>)(goalId, text);
       },
       cancel: goalId => control.cancel(goalId),
       shutdown: () => (app['shutdown'] as () => Promise<void>)()

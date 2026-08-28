@@ -74,6 +74,16 @@ export type Catalogue = {
   };
 
   /** What the engine is doing, said as one line that replaces the last. */
+  /** What became of an amendment, in the engine's own six states. */
+  readonly steer: {
+    readonly received: string;
+    readonly scoped: string;
+    readonly delivered: string;
+    readonly admitted: string;
+    readonly superseded: string;
+    readonly not_delivered: string;
+  };
+
   readonly phases: {
     readonly starting: string;
     readonly reading: string;
@@ -98,6 +108,7 @@ export type Catalogue = {
     readonly repaired: string;
     readonly noEngineHere: string;
     readonly endedBadly: string;
+    readonly replanned: string;
   };
 
   readonly places: {

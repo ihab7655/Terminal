@@ -45,6 +45,15 @@ export type Change = {readonly sign: '+' | '-'; readonly text: string};
 
 export type Item =
   /**
+   * A line typed while a goal was running — an AMENDMENT, not a new ask.
+   *
+   * It gets a mark nothing else uses and it is indented under the goal it
+   * changes, so the shape says it belongs to something in flight before a word
+   * is read. The engine's own six `directive.*` events move it through its
+   * states; the console never guesses one.
+   */
+  | {kind: 'steer'; id: string; text: string; state: string; scope?: string}
+  /**
    * The plan the engine produced, when it was asked not to run it.
    *
    * Not a preview and not a prediction: `beforePlanExecution` fires after the
@@ -396,6 +405,19 @@ function itemRows(item: Item, state: State, width: number, verbs: number): strin
     const detail = [item.detail, elapsed].filter(Boolean).join(' · ');
     const body = fit(detail ? `${item.text} · ${detail}` : item.text, Math.max(8, width - left));
     return [head + tint(body, colour.muted)];
+  }
+
+  if (item.kind === 'steer') {
+    const say = catalogueFor(state.language);
+    // Indented one level deeper than a `said`: it hangs off the goal above it.
+    const left = INDENT + MARK;
+    const room = Math.max(8, width - left - MARK);
+    const verdict = say.steer[item.state as keyof typeof say.steer] ?? item.state;
+    return [
+      ' '.repeat(left) + tint('»', colour.amber) + ' ' +
+        tint(fit(item.text, room), colour.ink) + ' ' +
+        tint(verdict, colour.dim)
+    ];
   }
 
   if (item.kind === 'planned') {

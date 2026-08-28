@@ -118,10 +118,20 @@ ok('started does claim it',
     return i?.kind === 'noted' && i.lines[0] === 'repairing bash';
   })());
 
-console.log('\nsilence is a decision');
-for (const t of ['tool.args.normalized', 'worker.done', 'goal.completed', 'retry.plan_changed', 'directive.received']) {
+console.log('\nsilence is a decision, and it is a shorter list now');
+// worker.done and retry.plan_changed used to be here and are drawn now — the
+// list is what the console DECIDES to say nothing about, not what it has not
+// got round to.
+//
+//   tool.args.normalized  the engine tidying its own arguments; the call itself
+//                         is already a row, and this would double it
+//   goal.completed        `completion.finished` alone carries an ending
+//                         (HANDOFF: "one ending, one carrier")
+for (const t of ['tool.args.normalized', 'goal.completed']) {
   ok(`${t} renders nothing`, toItem(ev(t, {})) === undefined);
 }
+ok('and a directive with no text renders nothing — a row about nothing is worse than silence',
+  toItem(ev('directive.received', {directiveId: 'd'})) === undefined);
 
 
 // ── the question carries what an answer needs ───────────────────────────────
@@ -179,5 +189,34 @@ ok('a stopped run reads as its reason, which is what the summary carries',
   ok('and is marked failed, not written', refused.state === 'failed');
 }
 
+
+// ── AN AMENDMENT MOVES THROUGH ITS STATES IN ONE ROW ────────────────────────
+{
+  const d = (state: string, extra: Record<string, unknown> = {}) =>
+    toItem({eventType: `directive.${state}`, goalId: 'g',
+            payload: {directiveId: 'd1', text: 'put it in src/', state, ...extra}}) as
+      {kind: string; id: string; state: string; scope?: string} | undefined;
+  ok('received becomes a steer row', d('received')?.kind === 'steer');
+  ok('and every later state carries the SAME id, so it replaces rather than stacks',
+    ['scoped', 'delivered', 'admitted', 'superseded', 'not_delivered']
+      .every(s => d(s)?.id === d('received')?.id));
+  ok('the state is the engine\'s, verbatim', d('admitted')?.state === 'admitted');
+  ok('and the scope travels when the engine declared one',
+    d('scoped', {scope: 'plan'})?.scope === 'plan');
+  ok('not_delivered is drawn, not hidden — it is an honest ending',
+    d('not_delivered')?.kind === 'steer');
+  ok('an event with no text is not turned into a row about nothing',
+    toItem({eventType: 'directive.received', goalId: 'g', payload: {directiveId: 'd'}}) === undefined);
+}
+
+// ── TWO EVENTS THAT USED TO BE DROPPED ──────────────────────────────────────
+{
+  const done = toItem({eventType: 'worker.done', goalId: 'g', payload: {role: 'implementer'}}) as
+    {kind: string; detail?: string} | undefined;
+  ok('worker.done says where the engine is, and who', done?.kind === 'phase' && done.detail === 'implementer');
+  const changed = toItem({eventType: 'retry.plan_changed', goalId: 'g', payload: {reason: 'a new approach'}}) as
+    {kind: string; lines: string[]} | undefined;
+  ok('retry.plan_changed says the plan changed', changed?.lines[0]?.includes('a new approach') === true);
+}
 console.log(failed === 0 ? '\nall good.\n' : `\n${failed} failed.\n`);
 process.exit(failed === 0 ? 0 : 1);

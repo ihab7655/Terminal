@@ -132,7 +132,20 @@ let engineOpening: Promise<void> | null = null;
 // Absent under DEMO, where there is no engine and nothing to wait for.
 let openEngineWhenTheOpeningIsOver: (() => void) | null = null;
 
-const add = (item: Item) => edit(s => ({...s, items: [...s.items, item]}));
+/**
+ * Append, or REPLACE an item that already carries this id.
+ *
+ * A steer arrives six times — once per state the engine concludes — under one
+ * id. Replacing means the row moves through its states in place rather than
+ * stacking six rows about one sentence. Everything else mints a fresh id and
+ * therefore appends, as before.
+ */
+const add = (item: Item) =>
+  edit(s =>
+    s.items.some(i => i.id === item.id)
+      ? {...s, items: s.items.map(i => (i.id === item.id ? item : i))}
+      : {...s, items: [...s.items, item]}
+  );
 
 // ── What is running, and can therefore be stopped ────────────────────────────
 //
@@ -320,6 +333,28 @@ function key(k: Key) {
       const text = state.input.trim();
       if (text === '') return;
 
+      // ── AN AMENDMENT, NOT A SECOND ASK ────────────────────────────────
+      //
+      // A line typed while something is running is a steer: the engine accepts
+      // one and routes it (ADR-012) — guidance reaches the working worker at
+      // the top of its next step, a change to what must be produced ends the
+      // attempt at its next wave boundary. It stops nothing and restarts
+      // nothing, so the composer is never dead time.
+      //
+      // The console does not DECIDE that it is an amendment by reading the
+      // words — it is one because something is running, which is a fact the
+      // console holds. What it CHANGES is the engine's to conclude, and the
+      // six directive events say so.
+      if (running.length > 0 && engine) {
+        const target = running[running.length - 1]!;
+        edit(s => ({...s, input: '', caret: 0, history: remember(s.history, text)}));
+        void engine.steer(target, text).catch((err: unknown) => {
+          add({kind: 'noted', id: `noted-${Date.now()}`,
+               lines: [`${catalogueFor(settings.language).outcome.endedBadly}: ${err instanceof Error ? err.message : String(err)}`]});
+        });
+        return;
+      }
+
       // ONE WAY IN. The console used to read its own rendered items to decide
       // whether a typed line was an answer to a pending question, and call a
       // different engine method if it was. That was cognition living in a host:
@@ -329,6 +364,25 @@ function key(k: Key) {
       // the goal ends, and the next message arrives with the exchange above it.
       // So there is nothing here to route: everything a person types is a
       // message, and the engine reads it in its session.
+      // ── WHAT WAS ASKED IS THE ANCHOR OF THE LOG ──────────────────────
+      //
+      // Two defects, both present since before this branch and both found by
+      // using the console rather than reading it:
+      //
+      //   * the goal a person typed was NEVER shown. `said` is described in
+      //     console.ts as "the anchor of the whole log" and nothing in the live
+      //     path produced one — the transcript began at the engine's first
+      //     event, so a session read as answers to questions nobody could see.
+      //
+      //   * the composer was never cleared. The text stayed, so the next line
+      //     typed was appended to it: on 2026-08-28 a steer sent 30 seconds
+      //     after a goal arrived at the engine as the goal text and the steer
+      //     text run together, and the engine was asked to amend a goal using
+      //     a sentence that began by repeating it.
+      //
+      // Cleared and recorded here, at the one place a message becomes a goal.
+      add({kind: 'said', id: `said-${Date.now()}`, text});
+      edit(s => ({...s, input: '', caret: 0, history: remember(s.history, text)}));
       void ask(text);
       return;
     }

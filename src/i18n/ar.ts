@@ -69,6 +69,15 @@ export const ar: Catalogue = {
     forbiddenHolds: 'الممنوع ممنوع في كل الأوضاع'
   },
 
+  steer: {
+    received: 'سُمِع',
+    scoped: 'قُرِئ',
+    delivered: 'وصل العامل',
+    admitted: 'يدخل الخطّة',
+    superseded: 'حلّ محلّه ما قلتَه بعده',
+    not_delivered: 'انتهى الهدف قبل أن يصل'
+  },
+
   phases: {
     starting: 'يبدأ',
     reading: 'يقرأ الطلب',
@@ -91,7 +100,8 @@ export const ar: Catalogue = {
     repairing: 'يُصلح {tool}',
     repaired: 'أصلح {tool}',
     noEngineHere: 'لا محرّك — لا شيء يُشغَّل عليه',
-    endedBadly: 'انتهى الهدف بسوء'
+    endedBadly: 'انتهى الهدف بسوء',
+    replanned: 'تغيّرت الخطّة للمحاولة التالية'
   },
 
   places: {
