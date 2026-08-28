@@ -1,5 +1,5 @@
 import {emptyState, frame, type State} from './console.js';
-import {cell} from './text.js';
+import {width} from './text.js';
 
 // ── RULE 5, ASSERTED ────────────────────────────────────────────────────────
 //
@@ -19,9 +19,11 @@ const ok = (name: string, cond: boolean, got?: unknown) => {
   if (!cond && got !== undefined) console.log(`      got: ${JSON.stringify(got)}`);
 };
 
+// Measured by the terminal layer's own function, not by counting characters
+// here — the whole point is that this file does not do its own arithmetic.
 const ESC = String.fromCharCode(27);
 const plain = (s: string) => s.split(new RegExp(ESC + '\\[[0-9;]*m', 'g')).join('');
-const cols = (s: string) => [...plain(s)].reduce((n, ch) => n + cell(ch), 0);
+const cols = (s: string) => width(plain(s));
 
 // `frame()` measures the real terminal — screen.ts:152 reads
 // process.stdout.columns/rows — which is exactly why a resize is a repaint and
